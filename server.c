@@ -38,7 +38,7 @@ int main(int argc, char **argv)
 
     for (;;)
     {
-        int client_len;
+        unsigned int client_len;
         struct sockaddr_in client_addr;
         int conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_len);
         if (conn_sock == -1)
