@@ -16,11 +16,11 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    struct sockaddr_in receiver_addr;
-    receiver_addr.sin_family = PF_INET;
-    receiver_addr.sin_addr.s_addr = INADDR_ANY;
-    receiver_addr.sin_port = htons(8080); // host to network short
-    result = bind(listen_sock, (struct sockaddr *)&receiver_addr, sizeof(receiver_addr));
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = PF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(8080);
+    result = bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (result == -1)
     {
         perror("server: bind()");
@@ -38,9 +38,9 @@ int main(int argc, char **argv)
 
     for (;;)
     {
-        int sender_len;
-        struct sockaddr_in sender_addr;
-        int conn_sock = accept(listen_sock, (struct sockaddr *)&sender_addr, &sender_len);
+        int client_len;
+        struct sockaddr_in client_addr;
+        int conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_len);
         if (conn_sock == -1)
         {
             perror("server: accept()");
@@ -58,7 +58,7 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        printf("%s\n", buf);
+        printf("%s", buf);
 
         close(conn_sock);
     }

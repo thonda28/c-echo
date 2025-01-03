@@ -18,11 +18,11 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    struct sockaddr_in client_addr;
-    client_addr.sin_family = PF_INET;
-    client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    client_addr.sin_port = htons(8080);
-    result = connect(sock, (struct sockaddr *)&client_addr, sizeof(client_addr));
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = PF_INET;
+    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr.sin_port = htons(8080);
+    result = connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
     if (result == -1)
     {
         perror("client: connect()");
