@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -15,7 +16,7 @@ int main(int argc, char **argv)
     connect(sock, (struct sockaddr *)&client_addr, sizeof(client_addr));
 
     char buf[256];
-    strcpy(buf, "hello");
+    fgets(buf, sizeof(buf) - 1, stdin);
 
     send(sock, buf, sizeof(buf), 0);
 
