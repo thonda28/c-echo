@@ -5,26 +5,26 @@
 
 int main(int argc, char **argv)
 {
-    int sender_len;
-    struct sockaddr_in receiver_addr, sender_addr;
+    int listen_sock = socket(PF_INET, SOCK_STREAM, 0);
 
-    int sock = socket(PF_INET, SOCK_STREAM, 0);
-
+    struct sockaddr_in receiver_addr;
     receiver_addr.sin_family = PF_INET;
     receiver_addr.sin_addr.s_addr = INADDR_ANY;
-    receiver_addr.sin_port = htons(8080);
-    bind(sock, (struct sockaddr *)&receiver_addr, sizeof(receiver_addr));
+    receiver_addr.sin_port = htons(8080); // host to network short
+    bind(listen_sock, (struct sockaddr *)&receiver_addr, sizeof(receiver_addr));
 
-    listen(sock, 1);
+    listen(listen_sock, 0);
 
-    int sock2 = accept(sock, (struct sockaddr *)&sender_addr, &sender_len);
+    int sender_len;
+    struct sockaddr_in sender_addr;
+    int conn_sock = accept(listen_sock, (struct sockaddr *)&sender_addr, &sender_len);
 
     char buf[256];
-    recv(sock2, buf, sizeof(buf), 0);
+    recv(conn_sock, buf, sizeof(buf) - 1, 0);
     printf("%s\n", buf);
 
-    close(sock);
-    close(sock2);
+    close(listen_sock);
+    close(conn_sock);
 
     return 0;
 }

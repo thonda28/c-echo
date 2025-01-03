@@ -6,10 +6,9 @@
 
 int main(int argc, char **argv)
 {
-    struct sockaddr_in client_addr;
-
     int sock = socket(PF_INET, SOCK_STREAM, 0);
 
+    struct sockaddr_in client_addr;
     client_addr.sin_family = PF_INET;
     client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     client_addr.sin_port = htons(8080);
