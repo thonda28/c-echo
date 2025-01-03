@@ -15,16 +15,20 @@ int main(int argc, char **argv)
 
     listen(listen_sock, 0);
 
-    int sender_len;
-    struct sockaddr_in sender_addr;
-    int conn_sock = accept(listen_sock, (struct sockaddr *)&sender_addr, &sender_len);
+    for (;;)
+    {
+        int sender_len;
+        struct sockaddr_in sender_addr;
+        int conn_sock = accept(listen_sock, (struct sockaddr *)&sender_addr, &sender_len);
 
-    char buf[256];
-    recv(conn_sock, buf, sizeof(buf) - 1, 0);
-    printf("%s\n", buf);
+        char buf[256];
+        recv(conn_sock, buf, sizeof(buf) - 1, 0);
+        printf("%s\n", buf);
+
+        close(conn_sock);
+    }
 
     close(listen_sock);
-    close(conn_sock);
 
     return 0;
 }
