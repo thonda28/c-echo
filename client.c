@@ -30,16 +30,26 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    char buf[256];
+    char buf[256] = {0};
     fgets(buf, sizeof(buf) - 1, stdin);
 
     result = send(sock, buf, sizeof(buf), 0);
     if (result == -1)
     {
-        perror("client: connect()");
+        perror("client: send()");
         close(sock);
         exit(1);
     }
+
+    result = recv(sock, buf, sizeof(buf) - 1, 0);
+    if (result == -1)
+    {
+        perror("client: recv()");
+        close(sock);
+        exit(1);
+    }
+
+    printf("%s", buf);
 
     close(sock);
 

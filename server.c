@@ -36,7 +36,7 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    for (;;)
+    while (1)
     {
         unsigned int client_len;
         struct sockaddr_in client_addr;
@@ -48,7 +48,7 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        char buf[256];
+        char buf[256] = {0};
         result = recv(conn_sock, buf, sizeof(buf) - 1, 0);
         if (result == -1)
         {
@@ -58,7 +58,14 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        printf("%s", buf);
+        result = send(conn_sock, buf, sizeof(buf), 0);
+        if (result == -1)
+        {
+            perror("server: send()");
+            close(conn_sock);
+            close(listen_sock);
+            exit(1);
+        }
 
         close(conn_sock);
     }
