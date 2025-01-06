@@ -26,10 +26,11 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    char buf[256] = {0};
-    fgets(buf, sizeof(buf) - 1, stdin);
+    char buf[256];
+    fgets(buf, sizeof(buf), stdin); // Null-terminate the string
 
-    if (send(sock, buf, sizeof(buf), 0) == -1)
+    size_t len = strlen(buf);
+    if (send(sock, buf, len, 0) == -1)
     {
         perror("client: send()");
         close(sock);

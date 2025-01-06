@@ -43,18 +43,23 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        char buf[256] = {0};
-        if (recv(conn_sock, buf, sizeof(buf) - 1, 0) == -1)
+        char buf[256];
+        ssize_t received_bytes;
+        while ((received_bytes = recv(conn_sock, buf, sizeof(buf) - 1, 0)) > 0)
         {
-            perror("server: recv()");
-            close(conn_sock);
-            close(listen_sock);
-            exit(1);
+            buf[received_bytes] = '\0'; // Null-terminate the string
+            if (send(conn_sock, buf, received_bytes, 0) == -1)
+            {
+                perror("server: send()");
+                close(conn_sock);
+                close(listen_sock);
+                exit(1);
+            }
         }
 
-        if (send(conn_sock, buf, sizeof(buf), 0) == -1)
+        if (received_bytes == -1)
         {
-            perror("server: send()");
+            perror("server: recv()");
             close(conn_sock);
             close(listen_sock);
             exit(1);
