@@ -6,11 +6,8 @@
 
 int main(int argc, char **argv)
 {
-    // TODO: Refactor redundant error handling
-    int result = 0;
-
-    int listen_sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (listen_sock == -1)
+    int listen_sock;
+    if ((listen_sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("server: socket()");
         exit(1);
@@ -20,16 +17,14 @@ int main(int argc, char **argv)
     server_addr.sin_family = PF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(8080);
-    result = bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    if (result == -1)
+    if (bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {
         perror("server: bind()");
         close(listen_sock);
         exit(1);
     }
 
-    result = listen(listen_sock, 0);
-    if (result == -1)
+    if (listen(listen_sock, 0) == -1)
     {
         perror("server: listen()");
         close(listen_sock);
@@ -40,8 +35,8 @@ int main(int argc, char **argv)
     {
         unsigned int client_len;
         struct sockaddr_in client_addr;
-        int conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_len);
-        if (conn_sock == -1)
+        int conn_sock;
+        if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_len)) == -1)
         {
             perror("server: accept()");
             close(listen_sock);
@@ -49,8 +44,7 @@ int main(int argc, char **argv)
         }
 
         char buf[256] = {0};
-        result = recv(conn_sock, buf, sizeof(buf) - 1, 0);
-        if (result == -1)
+        if (recv(conn_sock, buf, sizeof(buf) - 1, 0) == -1)
         {
             perror("server: recv()");
             close(conn_sock);
@@ -58,8 +52,7 @@ int main(int argc, char **argv)
             exit(1);
         }
 
-        result = send(conn_sock, buf, sizeof(buf), 0);
-        if (result == -1)
+        if (send(conn_sock, buf, sizeof(buf), 0) == -1)
         {
             perror("server: send()");
             close(conn_sock);

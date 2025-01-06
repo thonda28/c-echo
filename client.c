@@ -8,11 +8,8 @@
 
 int main(int argc, char **argv)
 {
-    // TODO: Refactor redundant error handling
-    int result = 0;
-
-    int sock = socket(PF_INET, SOCK_STREAM, 0);
-    if (sock == -1)
+    int sock;
+    if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
     {
         perror("client: socket()");
         exit(1);
@@ -22,8 +19,7 @@ int main(int argc, char **argv)
     server_addr.sin_family = PF_INET;
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     server_addr.sin_port = htons(8080);
-    result = connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    if (result == -1)
+    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
     {
         perror("client: connect()");
         close(sock);
@@ -33,16 +29,14 @@ int main(int argc, char **argv)
     char buf[256] = {0};
     fgets(buf, sizeof(buf) - 1, stdin);
 
-    result = send(sock, buf, sizeof(buf), 0);
-    if (result == -1)
+    if (send(sock, buf, sizeof(buf), 0) == -1)
     {
         perror("client: send()");
         close(sock);
         exit(1);
     }
 
-    result = recv(sock, buf, sizeof(buf) - 1, 0);
-    if (result == -1)
+    if (recv(sock, buf, sizeof(buf) - 1, 0) == -1)
     {
         perror("client: recv()");
         close(sock);
