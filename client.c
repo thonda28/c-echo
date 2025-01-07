@@ -38,18 +38,32 @@ int main(int argc, char **argv)
         fgets(buf, sizeof(buf), stdin); // Null-terminate the string
 
         size_t len = strlen(buf);
-        if (send(sock, buf, len, 0) == -1)
+        ssize_t sent_bytes = send(sock, buf, len, 0);
+        if (sent_bytes == -1)
         {
             perror("client: send()");
             close(sock);
             exit(1);
         }
+        if (sent_bytes == 0)
+        {
+            printf("Connection closed by server\n");
+            close(sock);
+            exit(0);
+        }
 
-        if (recv(sock, buf, sizeof(buf) - 1, 0) == -1)
+        ssize_t received_bytes = recv(sock, buf, sizeof(buf) - 1, 0);
+        if (received_bytes == -1)
         {
             perror("client: recv()");
             close(sock);
             exit(1);
+        }
+        if (received_bytes == 0)
+        {
+            printf("Connection closed by server\n");
+            close(sock);
+            exit(0);
         }
 
         printf("%s", buf);
