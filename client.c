@@ -32,25 +32,28 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    char buf[256];
-    fgets(buf, sizeof(buf), stdin); // Null-terminate the string
-
-    size_t len = strlen(buf);
-    if (send(sock, buf, len, 0) == -1)
+    while (1)
     {
-        perror("client: send()");
-        close(sock);
-        exit(1);
-    }
+        char buf[256];
+        fgets(buf, sizeof(buf), stdin); // Null-terminate the string
 
-    if (recv(sock, buf, sizeof(buf) - 1, 0) == -1)
-    {
-        perror("client: recv()");
-        close(sock);
-        exit(1);
-    }
+        size_t len = strlen(buf);
+        if (send(sock, buf, len, 0) == -1)
+        {
+            perror("client: send()");
+            close(sock);
+            exit(1);
+        }
 
-    printf("%s", buf);
+        if (recv(sock, buf, sizeof(buf) - 1, 0) == -1)
+        {
+            perror("client: recv()");
+            close(sock);
+            exit(1);
+        }
+
+        printf("%s", buf);
+    }
 
     close(sock);
 
