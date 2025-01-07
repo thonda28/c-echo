@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,17 +86,27 @@ int main(int argc, char **argv)
                 }
             }
 
-            char client_ip[INET6_ADDRSTRLEN];
-            inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
-            printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
-
+            bool is_client_added = false;
             for (int i = 0; i < MAX_CLIENTS; i++)
             {
                 if (client_sockets[i] == 0)
                 {
                     client_sockets[i] = conn_sock;
+                    is_client_added = true;
                     break;
                 }
+            }
+
+            if (is_client_added)
+            {
+                char client_ip[INET6_ADDRSTRLEN];
+                inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
+                printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
+            }
+            else
+            {
+                printf("No more room for clients\n");
+                close(conn_sock);
             }
         }
 
