@@ -1,23 +1,25 @@
-#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 int main(int argc, char **argv)
 {
     int listen_sock;
-    if ((listen_sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
+    if ((listen_sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
     {
         perror("server: socket()");
         exit(1);
     }
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = PF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(8080);
-    if (bind(listen_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+    struct sockaddr_in6 server_addr6;
+    memset(&server_addr6, 0, sizeof(server_addr6));
+    server_addr6.sin6_family = PF_INET6;
+    server_addr6.sin6_port = htons(8080);
+    server_addr6.sin6_addr = in6addr_any;
+    if (bind(listen_sock, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
     {
         perror("server: bind()");
         close(listen_sock);
@@ -33,10 +35,10 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        unsigned int client_len;
-        struct sockaddr_in client_addr;
+        struct sockaddr_in6 client_addr6;
+        socklen_t addr_len = sizeof(client_addr6);
         int conn_sock;
-        if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_len)) == -1)
+        if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
         {
             perror("server: accept()");
             close(listen_sock);

@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,17 +8,24 @@
 int main(int argc, char **argv)
 {
     int sock;
-    if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
+    if ((sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
     {
         perror("client: socket()");
         exit(1);
     }
 
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = PF_INET;
-    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    server_addr.sin_port = htons(8080);
-    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+    struct sockaddr_in6 server_addr6;
+    memset(&server_addr6, 0, sizeof(server_addr6));
+    server_addr6.sin6_family = PF_INET6;
+    server_addr6.sin6_port = htons(8080);
+    if (inet_pton(PF_INET6, "::1", &server_addr6.sin6_addr) <= 0)
+    {
+        perror("client: inet_pton()");
+        close(sock);
+        exit(1);
+    }
+
+    if (connect(sock, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
     {
         perror("client: connect()");
         close(sock);
