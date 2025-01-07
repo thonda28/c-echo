@@ -1,6 +1,6 @@
 .PHONY: build-server
 build-server:
-	gcc server.c -o server
+	gcc -Wall -Wextra -Wpedantic server.c -o server
 
 .PHONY: run-server
 run-server: build-server
@@ -8,7 +8,7 @@ run-server: build-server
 
 .PHONY: build-client
 build-client:
-	gcc client.c -o client
+	gcc -Wall -Wextra -Wpedantic client.c -o client
 
 .PHONY: run-client
 run-client:build-client
