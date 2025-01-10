@@ -9,9 +9,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define MAX_CLIENTS 30
+#include "utils.h"
 
-long parse_port(const char *port_str);
+#define MAX_CLIENTS 30
 
 int main(int argc, char **argv)
 {
@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     struct sockaddr_in6 server_addr6;
     memset(&server_addr6, 0, sizeof(server_addr6));
     server_addr6.sin6_family = PF_INET6;
-    server_addr6.sin6_port = htons(8080);
+    server_addr6.sin6_port = htons(port);
     server_addr6.sin6_addr = in6addr_any;
     if (bind(listen_sock, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
     {
@@ -177,21 +177,4 @@ int main(int argc, char **argv)
     // close(listen_sock);
 
     return 0;
-}
-
-long parse_port(const char *port_str)
-{
-    char *endptr;
-    long port = strtol(port_str, &endptr, 10);
-    if (endptr == port_str || *endptr != '\0')
-    {
-        printf("server: cannot convert %s to a port number\n", port_str);
-        exit(1);
-    }
-    else if (errno == ERANGE || port <= 0 || port > 65535)
-    {
-        printf("server: port number [%s] out of range\n", port_str);
-        exit(1);
-    }
-    return port;
 }
