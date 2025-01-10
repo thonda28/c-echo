@@ -1,12 +1,29 @@
 #include <arpa/inet.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "utils.h"
+
 int main(int argc, char **argv)
 {
+    // Check if the IP address and port number are provided
+    if (argc != 3)
+    {
+        printf("Usage: %s <ip> <port>\n", argv[0]);
+        exit(1);
+    }
+
+    // Initialize the error number
+    errno = 0;
+
+    // Parse the port number
+    long port = parse_port(argv[2]);
+    printf("Port: %ld\n", port);
+
     int sock;
     if ((sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
     {
@@ -17,7 +34,7 @@ int main(int argc, char **argv)
     struct sockaddr_in6 server_addr6;
     memset(&server_addr6, 0, sizeof(server_addr6));
     server_addr6.sin6_family = PF_INET6;
-    server_addr6.sin6_port = htons(8080);
+    server_addr6.sin6_port = htons(port);
     if (inet_pton(PF_INET6, "::1", &server_addr6.sin6_addr) <= 0)
     {
         perror("client: inet_pton()");
