@@ -11,8 +11,24 @@
 
 #define MAX_CLIENTS 30
 
+long parse_port(const char *port_str);
+
 int main(int argc, char **argv)
 {
+    // Check if the port number is provided
+    if (argc != 2)
+    {
+        printf("Usage: %s <port>\n", argv[0]);
+        exit(1);
+    }
+
+    // Initialize the error number
+    errno = 0;
+
+    // Parse the port number
+    long port = parse_port(argv[1]);
+    printf("Port: %ld\n", port);
+
     int listen_sock;
     if ((listen_sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
     {
@@ -161,4 +177,21 @@ int main(int argc, char **argv)
     // close(listen_sock);
 
     return 0;
+}
+
+long parse_port(const char *port_str)
+{
+    char *endptr;
+    long port = strtol(port_str, &endptr, 10);
+    if (endptr == port_str || *endptr != '\0')
+    {
+        printf("server: cannot convert %s to a port number\n", port_str);
+        exit(1);
+    }
+    else if (errno == ERANGE || port <= 0 || port > 65535)
+    {
+        printf("server: port number [%s] out of range\n", port_str);
+        exit(1);
+    }
+    return port;
 }
