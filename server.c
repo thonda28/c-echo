@@ -101,8 +101,8 @@ int main(int argc, char **argv)
     }
 
     // Create an epoll instance
-    int epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1)
+    int epoll_fd;
+    if ((epoll_fd = epoll_create1(0)) == -1)
     {
         perror("server: epoll_create1()");
         close(listen_sock);
@@ -123,9 +123,17 @@ int main(int argc, char **argv)
     }
 
     struct epoll_event events[MAX_EVENTS];
+    // Manage the client sockets using stack
     int client_sockets[MAX_CLIENTS];
+    int free_indices[MAX_CLIENTS];
+    int free_index_top = MAX_CLIENTS - 1;
+
+    // Initialize the client sockets and free indices
     for (int i = 0; i < MAX_CLIENTS; i++)
+    {
         client_sockets[i] = -1;
+        free_indices[i] = i;
+    }
 
     while (1)
     {
@@ -172,50 +180,46 @@ int main(int argc, char **argv)
                     exit(1);
                 }
 
-                bool is_client_added = false;
-                for (int j = 0; j < MAX_CLIENTS; j++)
-                {
-                    if (client_sockets[j] == -1)
-                    {
-                        client_sockets[j] = conn_sock;
-                        is_client_added = true;
-
-                        event.events = EPOLLIN | EPOLLET;
-                        event.data.fd = conn_sock;
-                        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
-                        {
-                            perror("server: epoll_ctl()");
-                            close(conn_sock);
-                            close(listen_sock);
-                            close(epoll_fd);
-                            exit(1);
-                        }
-
-                        break;
-                    }
-                }
-
-                if (is_client_added)
-                {
-                    char client_ip[INET6_ADDRSTRLEN];
-                    inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
-                    printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
-                }
-                else
+                // Fulfilled the maximum number of clients
+                if (free_index_top == -1)
                 {
                     printf("No more room for clients\n");
                     close(conn_sock);
+                    continue;
                 }
+
+                int index = free_indices[free_index_top--];
+                client_sockets[index] = conn_sock;
+
+                event.events = EPOLLIN | EPOLLET;
+                event.data.fd = conn_sock;
+                if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
+                {
+                    perror("server: epoll_ctl()");
+                    close(conn_sock);
+                    close(listen_sock);
+                    close(epoll_fd);
+                    exit(1);
+                }
+
+                char client_ip[INET6_ADDRSTRLEN];
+                inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
+                printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
             }
             // Check if the event is for a client socket
             else
             {
                 int conn_sock = events[i].data.fd;
+                // TODO: Manage the client socket using hash table
                 for (int j = 0; j < MAX_CLIENTS; j++)
                 {
                     if (client_sockets[j] == conn_sock)
                     {
                         handle_client(conn_sock, client_sockets, j);
+                        if (client_sockets[j] == -1)
+                        {
+                            free_indices[++free_index_top] = j;
+                        }
                         break;
                     }
                 }
