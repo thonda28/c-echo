@@ -9,6 +9,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <netdb.h>
 
 #include "utils.h"
 
@@ -35,59 +36,143 @@ int main(int argc, char **argv)
     long port = parse_port(argv[1]);
     printf("Port: %ld\n", port);
 
-    int listen_sock;
-    if ((listen_sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
+    struct addrinfo hints, *res, *res0;
+    int listen_sock_v4 = -1;
+    int listen_sock_v6 = -1;
+    int yes = 1;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC; // Allow IPv4 or IPv6
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE; // For wildcard IP address
+
+    if (getaddrinfo(NULL, argv[1], &hints, &res0) != 0)
     {
-        perror("server: socket()");
+        perror("server: getaddrinfo()");
         exit(1);
     }
 
-    if (fcntl(listen_sock, F_SETFL, O_NONBLOCK) == -1)
+    for (res = res0; res != NULL; res = res->ai_next)
     {
-        perror("server: fcntl(listen_sock)");
-        close(listen_sock);
+        int listen_sock;
+        if ((listen_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+        {
+            perror("server: socket()");
+            continue;
+        }
+
+        // Set the socket option to reuse the address
+        setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
+        if (res->ai_family == PF_INET6)
+        {
+            // Set the socket option to allow only IPv6 connections
+            if (setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
+            {
+                perror("server: setsockopt()");
+                close(listen_sock);
+                continue;
+            };
+        }
+
+        if (bind(listen_sock, res->ai_addr, res->ai_addrlen) == -1)
+        {
+            perror("server: bind()");
+            close(listen_sock);
+            continue;
+        }
+
+        if (listen(listen_sock, 5) == -1)
+        {
+            perror("server: listen()");
+            close(listen_sock);
+            exit(1);
+        }
+
+        if (res->ai_family == PF_INET)
+        {
+            listen_sock_v4 = listen_sock;
+        }
+        else if (res->ai_family == PF_INET6)
+        {
+            listen_sock_v6 = listen_sock;
+        }
+    }
+
+    freeaddrinfo(res0);
+
+    if (listen_sock_v4 == -1 && listen_sock_v6 == -1)
+    {
+        printf("server: failed to bind any sockets\n");
         exit(1);
     }
 
-    struct sockaddr_in6 server_addr6;
-    memset(&server_addr6, 0, sizeof(server_addr6));
-    server_addr6.sin6_family = PF_INET6;
-    server_addr6.sin6_port = htons(port);
-    server_addr6.sin6_addr = in6addr_any;
-    if (bind(listen_sock, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
-    {
-        perror("server: bind()");
-        close(listen_sock);
-        exit(1);
-    }
-
-    if (listen(listen_sock, 0) == -1)
-    {
-        perror("server: listen()");
-        close(listen_sock);
-        exit(1);
-    }
+    printf("listen_sock_v4: %d\n", listen_sock_v4);
+    printf("listen_sock_v6: %d\n", listen_sock_v6);
 
     // Create an epoll instance
     int epoll_fd;
     if ((epoll_fd = epoll_create1(0)) == -1)
     {
         perror("server: epoll_create1()");
-        close(listen_sock);
+        if (listen_sock_v4 != -1)
+            close(listen_sock_v4);
+        if (listen_sock_v6 != -1)
+            close(listen_sock_v6);
         exit(1);
     }
 
     struct epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = listen_sock;
-
-    // Add the listen socket to the epoll instance
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
+    if (listen_sock_v4 != -1)
     {
-        perror("server: epoll_ctl()");
-        close(listen_sock);
-        close(epoll_fd);
-        exit(1);
+        if (fcntl(listen_sock_v4, F_SETFL, O_NONBLOCK) == -1)
+        {
+            perror("server: fcntl(listen_sock_v4)");
+            close(listen_sock_v4);
+            if (listen_sock_v6 != -1)
+                close(listen_sock_v6);
+            close(epoll_fd);
+            exit(1);
+        }
+        event.events = EPOLLIN;
+        event.data.fd = listen_sock_v4;
+
+        // Add the listen socket to the epoll instance
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock_v4, &event) == -1)
+        {
+            perror("server: epoll_ctl(listen_sock_v4)");
+            close(listen_sock_v4);
+            if (listen_sock_v6 != -1)
+                close(listen_sock_v6);
+            close(epoll_fd);
+            exit(1);
+        }
+    }
+
+    if (listen_sock_v6 != -1)
+    {
+        if (fcntl(listen_sock_v6, F_SETFL, O_NONBLOCK) == -1)
+        {
+            perror("server: fcntl(listen_sock_v6)");
+            close(listen_sock_v6);
+            if (listen_sock_v4 != -1)
+                close(listen_sock_v4);
+            close(epoll_fd);
+            exit(1);
+        }
+        event.events = EPOLLIN;
+        event.data.fd = listen_sock_v6;
+
+        // Add the listen socket to the epoll instance
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock_v6, &event) == -1)
+        {
+            perror("server: epoll_ctl(listen_sock_v6)");
+            close(listen_sock_v6);
+            if (listen_sock_v4 != -1)
+                close(listen_sock_v4);
+            close(epoll_fd);
+            exit(1);
+        }
     }
 
     struct epoll_event events[MAX_EVENTS];
@@ -110,7 +195,10 @@ int main(int argc, char **argv)
         if (nfds == -1)
         {
             perror("server: epoll_wait()");
-            close(listen_sock);
+            if (listen_sock_v4 != -1)
+                close(listen_sock_v4);
+            if (listen_sock_v6 != -1)
+                close(listen_sock_v6);
             close(epoll_fd);
             exit(1);
         }
@@ -118,9 +206,9 @@ int main(int argc, char **argv)
         for (int i = 0; i < nfds; i++)
         {
             // Check if the event is for the listen socket
-            if (events[i].data.fd == listen_sock)
+            if (events[i].data.fd == listen_sock_v4 || events[i].data.fd == listen_sock_v6)
             {
-                handle_new_connection(listen_sock, epoll_fd, client_sockets, free_indices, &free_index_top);
+                handle_new_connection(events[i].data.fd, epoll_fd, client_sockets, free_indices, &free_index_top);
             }
             // Check if the event is for a client socket
             else
@@ -143,7 +231,10 @@ int main(int argc, char **argv)
         }
     }
 
-    close(listen_sock);
+    if (listen_sock_v4 != -1)
+        close(listen_sock_v4);
+    if (listen_sock_v6 != -1)
+        close(listen_sock_v6);
     close(epoll_fd);
 
     return 0;
@@ -151,11 +242,11 @@ int main(int argc, char **argv)
 
 void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
 {
-    struct sockaddr_in6 client_addr6;
-    socklen_t addr_len = sizeof(client_addr6);
+    struct sockaddr_storage client_addr;
+    socklen_t addr_len = sizeof(client_addr);
     int conn_sock;
 
-    if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
+    if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &addr_len)) == -1)
     {
         if (errno == EAGAIN)
         {
@@ -204,8 +295,18 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     }
 
     char client_ip[INET6_ADDRSTRLEN];
-    inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
-    printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
+    if (client_addr.ss_family == PF_INET)
+    {
+        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)&client_addr;
+        inet_ntop(PF_INET, &client_addr4->sin_addr, client_ip, sizeof(client_ip));
+        printf("Connection from %s, %d\n", client_ip, ntohs(client_addr4->sin_port));
+    }
+    else if (client_addr.ss_family == PF_INET6)
+    {
+        struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)&client_addr;
+        inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip));
+        printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6->sin6_port));
+    }
 }
 
 void handle_client(int client_sock, int *client_sockets, int index)
