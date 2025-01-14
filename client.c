@@ -8,6 +8,8 @@
 
 #include "utils.h"
 
+#define BUFFER_SIZE 256
+
 int main(int argc, char **argv)
 {
     // Check if the IP address and port number are provided
@@ -51,7 +53,7 @@ int main(int argc, char **argv)
 
     while (1)
     {
-        char buf[256];
+        char buf[BUFFER_SIZE];
         fgets(buf, sizeof(buf), stdin); // Null-terminate the string
 
         size_t len = strlen(buf);

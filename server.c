@@ -11,11 +11,12 @@
 
 #include "utils.h"
 
+#define BUFFER_SIZE 256
 #define MAX_CLIENTS 30
 
 void handle_client(int client_sock, int *client_sockets, int index)
 {
-    char buf[256];
+    char buf[BUFFER_SIZE];
     ssize_t received_bytes;
     while ((received_bytes = recv(client_sock, buf, sizeof(buf) - 1, 0)) > 0)
     {
