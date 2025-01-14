@@ -62,7 +62,7 @@ int main(int argc, char **argv)
             close(sock);
             exit(1);
         }
-        if (sent_bytes == 0)
+        else if (sent_bytes == 0)
         {
             printf("Connection closed by server\n");
             close(sock);
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
             close(sock);
             exit(1);
         }
-        if (received_bytes == 0)
+        else if (received_bytes == 0)
         {
             printf("Connection closed by server\n");
             close(sock);

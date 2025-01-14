@@ -63,18 +63,20 @@ int main(int argc, char **argv)
     }
 
     fd_set read_fds;
-    int client_sockets[MAX_CLIENTS] = {0};
+    int client_sockets[MAX_CLIENTS];
+    for (int i = 0; i < MAX_CLIENTS; i++)
+        client_sockets[i] = -1;
     int max_fd;
+    FD_ZERO(&read_fds);
     while (1)
     {
-        FD_ZERO(&read_fds);
         FD_SET(listen_sock, &read_fds);
         max_fd = listen_sock;
 
         for (int i = 0; i < MAX_CLIENTS; i++)
         {
             int fd = client_sockets[i];
-            if (fd > 0)
+            if (fd >= 0)
                 FD_SET(fd, &read_fds);
             if (fd > max_fd)
                 max_fd = fd;
@@ -94,7 +96,11 @@ int main(int argc, char **argv)
             int conn_sock;
             if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
             {
-                if (errno != EAGAIN)
+                if (errno == EAGAIN)
+                {
+                    continue;
+                }
+                else
                 {
                     perror("server: accept()");
                     close(listen_sock);
@@ -102,10 +108,19 @@ int main(int argc, char **argv)
                 }
             }
 
+            // Set the connection socket to non-blocking
+            if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
+            {
+                perror("server: fcntl(conn_sock)");
+                close(conn_sock);
+                close(listen_sock);
+                exit(1);
+            }
+
             bool is_client_added = false;
             for (int i = 0; i < MAX_CLIENTS; i++)
             {
-                if (client_sockets[i] == 0)
+                if (client_sockets[i] == -1)
                 {
                     client_sockets[i] = conn_sock;
                     is_client_added = true;
@@ -129,16 +144,10 @@ int main(int argc, char **argv)
         for (int i = 0; i < MAX_CLIENTS; i++)
         {
             int conn_sock = client_sockets[i];
+            if (conn_sock == -1)
+                continue;
             if (!FD_ISSET(conn_sock, &read_fds))
                 continue;
-
-            if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
-            {
-                perror("server: fcntl(conn_sock)");
-                close(conn_sock);
-                close(listen_sock);
-                exit(1);
-            }
 
             char buf[256];
             ssize_t received_bytes;
@@ -165,11 +174,11 @@ int main(int argc, char **argv)
                     exit(1);
                 }
             }
-            if (received_bytes == 0)
+            else if (received_bytes == 0)
             {
                 printf("Connection closed\n");
                 close(conn_sock);
-                client_sockets[i] = 0;
+                client_sockets[i] = -1;
             }
         }
     }
