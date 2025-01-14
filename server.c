@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -13,6 +14,7 @@
 
 #define BUFFER_SIZE 256
 #define MAX_CLIENTS 30
+#define MAX_EVENTS 10
 
 void handle_client(int client_sock, int *client_sockets, int index)
 {
@@ -98,98 +100,131 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    fd_set read_fds;
+    // Create an epoll instance
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+    {
+        perror("server: epoll_create1()");
+        close(listen_sock);
+        exit(1);
+    }
+
+    struct epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = listen_sock;
+
+    // Add the listen socket to the epoll instance
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
+    {
+        perror("server: epoll_ctl()");
+        close(listen_sock);
+        close(epoll_fd);
+        exit(1);
+    }
+
+    struct epoll_event events[MAX_EVENTS];
     int client_sockets[MAX_CLIENTS];
     for (int i = 0; i < MAX_CLIENTS; i++)
         client_sockets[i] = -1;
-    int max_fd;
-    FD_ZERO(&read_fds);
+
     while (1)
     {
-        FD_SET(listen_sock, &read_fds);
-        max_fd = listen_sock;
-
-        for (int i = 0; i < MAX_CLIENTS; i++)
+        // Wait for events indefinitely
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        if (nfds == -1)
         {
-            int fd = client_sockets[i];
-            if (fd >= 0)
-                FD_SET(fd, &read_fds);
-            if (fd > max_fd)
-                max_fd = fd;
-        }
-
-        if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) == -1) // no timeout
-        {
-            perror("server: select()");
+            perror("server: epoll_wait()");
             close(listen_sock);
+            close(epoll_fd);
             exit(1);
         }
 
-        if (FD_ISSET(listen_sock, &read_fds))
+        for (int i = 0; i < nfds; i++)
         {
-            struct sockaddr_in6 client_addr6;
-            socklen_t addr_len = sizeof(client_addr6);
-            int conn_sock;
-            if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
+            // Check if the event is for the listen socket
+            if (events[i].data.fd == listen_sock)
             {
-                if (errno == EAGAIN)
+                struct sockaddr_in6 client_addr6;
+                socklen_t addr_len = sizeof(client_addr6);
+                int conn_sock;
+                if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
                 {
-                    continue;
+                    if (errno == EAGAIN)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        perror("server: accept()");
+                        close(listen_sock);
+                        close(epoll_fd);
+                        exit(1);
+                    }
+                }
+
+                // Set the connection socket to non-blocking
+                if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
+                {
+                    perror("server: fcntl(conn_sock)");
+                    close(conn_sock);
+                    close(listen_sock);
+                    close(epoll_fd);
+                    exit(1);
+                }
+
+                bool is_client_added = false;
+                for (int j = 0; j < MAX_CLIENTS; j++)
+                {
+                    if (client_sockets[j] == -1)
+                    {
+                        client_sockets[j] = conn_sock;
+                        is_client_added = true;
+
+                        event.events = EPOLLIN | EPOLLET;
+                        event.data.fd = conn_sock;
+                        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
+                        {
+                            perror("server: epoll_ctl()");
+                            close(conn_sock);
+                            close(listen_sock);
+                            close(epoll_fd);
+                            exit(1);
+                        }
+
+                        break;
+                    }
+                }
+
+                if (is_client_added)
+                {
+                    char client_ip[INET6_ADDRSTRLEN];
+                    inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
+                    printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
                 }
                 else
                 {
-                    perror("server: accept()");
-                    close(listen_sock);
-                    exit(1);
+                    printf("No more room for clients\n");
+                    close(conn_sock);
                 }
             }
-
-            // Set the connection socket to non-blocking
-            if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
-            {
-                perror("server: fcntl(conn_sock)");
-                close(conn_sock);
-                close(listen_sock);
-                exit(1);
-            }
-
-            bool is_client_added = false;
-            for (int i = 0; i < MAX_CLIENTS; i++)
-            {
-                if (client_sockets[i] == -1)
-                {
-                    client_sockets[i] = conn_sock;
-                    is_client_added = true;
-                    break;
-                }
-            }
-
-            if (is_client_added)
-            {
-                char client_ip[INET6_ADDRSTRLEN];
-                inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
-                printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
-            }
+            // Check if the event is for a client socket
             else
             {
-                printf("No more room for clients\n");
-                close(conn_sock);
+                int conn_sock = events[i].data.fd;
+                for (int j = 0; j < MAX_CLIENTS; j++)
+                {
+                    if (client_sockets[j] == conn_sock)
+                    {
+                        handle_client(conn_sock, client_sockets, j);
+                        break;
+                    }
+                }
             }
-        }
-
-        for (int i = 0; i < MAX_CLIENTS; i++)
-        {
-            int conn_sock = client_sockets[i];
-            if (conn_sock == -1)
-                continue;
-            if (!FD_ISSET(conn_sock, &read_fds))
-                continue;
-
-            handle_client(conn_sock, client_sockets, i);
         }
     }
 
-    // close(listen_sock);
+    close(listen_sock);
+    close(epoll_fd);
 
     return 0;
 }
