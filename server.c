@@ -13,6 +13,41 @@
 
 #define MAX_CLIENTS 30
 
+void handle_client(int client_sock, int *client_sockets, int index)
+{
+    char buf[256];
+    ssize_t received_bytes;
+    while ((received_bytes = recv(client_sock, buf, sizeof(buf) - 1, 0)) > 0)
+    {
+        printf("received_bytes: %ld\n", received_bytes);
+        buf[received_bytes] = '\0'; // Null-terminate the string
+        if (send(client_sock, buf, received_bytes, 0) == -1)
+        {
+            perror("server: send()");
+            close(client_sock);
+            client_sockets[index] = -1;
+            exit(1);
+        }
+    }
+
+    if (received_bytes == -1)
+    {
+        if (errno != EAGAIN)
+        {
+            perror("server: recv()");
+            close(client_sock);
+            client_sockets[index] = -1;
+            exit(1);
+        }
+    }
+    else if (received_bytes == 0)
+    {
+        printf("Connection closed\n");
+        close(client_sock);
+        client_sockets[index] = -1;
+    }
+}
+
 int main(int argc, char **argv)
 {
     // Check if the port number is provided
@@ -149,37 +184,7 @@ int main(int argc, char **argv)
             if (!FD_ISSET(conn_sock, &read_fds))
                 continue;
 
-            char buf[256];
-            ssize_t received_bytes;
-            while ((received_bytes = recv(conn_sock, buf, sizeof(buf) - 1, 0)) > 0)
-            {
-                printf("received_bytes: %ld\n", received_bytes);
-                buf[received_bytes] = '\0'; // Null-terminate the string
-                if (send(conn_sock, buf, received_bytes, 0) == -1)
-                {
-                    perror("server: send()");
-                    close(conn_sock);
-                    close(listen_sock);
-                    exit(1);
-                }
-            }
-
-            if (received_bytes == -1)
-            {
-                if (errno != EAGAIN)
-                {
-                    perror("server: recv()");
-                    close(conn_sock);
-                    close(listen_sock);
-                    exit(1);
-                }
-            }
-            else if (received_bytes == 0)
-            {
-                printf("Connection closed\n");
-                close(conn_sock);
-                client_sockets[i] = -1;
-            }
+            handle_client(conn_sock, client_sockets, i);
         }
     }
 
