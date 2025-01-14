@@ -16,99 +16,8 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
-void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
-{
-    struct sockaddr_in6 client_addr6;
-    socklen_t addr_len = sizeof(client_addr6);
-    int conn_sock;
-
-    if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
-    {
-        if (errno == EAGAIN)
-        {
-            return;
-        }
-        else
-        {
-            perror("server: accept()");
-            close(listen_sock);
-            close(epoll_fd);
-            exit(1);
-        }
-    }
-
-    // Set the connection socket to non-blocking mode
-    if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
-    {
-        perror("server: fcntl(conn_sock)");
-        close(conn_sock);
-        close(listen_sock);
-        close(epoll_fd);
-        exit(1);
-    }
-
-    // Fulfilled the maximum number of clients
-    if (*free_index_top == -1)
-    {
-        printf("No more room for clients\n");
-        close(conn_sock);
-        return;
-    }
-
-    int index = free_indices[(*free_index_top)--];
-    client_sockets[index] = conn_sock;
-
-    struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
-    event.data.fd = conn_sock;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
-    {
-        perror("server: epoll_ctl()");
-        close(conn_sock);
-        close(listen_sock);
-        close(epoll_fd);
-        exit(1);
-    }
-
-    char client_ip[INET6_ADDRSTRLEN];
-    inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
-    printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
-}
-
-void handle_client(int client_sock, int *client_sockets, int index)
-{
-    char buf[BUFFER_SIZE];
-    ssize_t received_bytes;
-    while ((received_bytes = recv(client_sock, buf, sizeof(buf) - 1, 0)) > 0)
-    {
-        printf("received_bytes: %ld\n", received_bytes);
-        buf[received_bytes] = '\0'; // Null-terminate the string
-        if (send(client_sock, buf, received_bytes, 0) == -1)
-        {
-            perror("server: send()");
-            close(client_sock);
-            client_sockets[index] = -1;
-            exit(1);
-        }
-    }
-
-    if (received_bytes == -1)
-    {
-        if (errno != EAGAIN)
-        {
-            perror("server: recv()");
-            close(client_sock);
-            client_sockets[index] = -1;
-            exit(1);
-        }
-    }
-    else if (received_bytes == 0)
-    {
-        printf("Connection closed\n");
-        close(client_sock);
-        client_sockets[index] = -1;
-    }
-}
+void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
+void handle_client(int client_sock, int *client_sockets, int index);
 
 int main(int argc, char **argv)
 {
@@ -238,4 +147,98 @@ int main(int argc, char **argv)
     close(epoll_fd);
 
     return 0;
+}
+
+void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
+{
+    struct sockaddr_in6 client_addr6;
+    socklen_t addr_len = sizeof(client_addr6);
+    int conn_sock;
+
+    if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr6, &addr_len)) == -1)
+    {
+        if (errno == EAGAIN)
+        {
+            return;
+        }
+        else
+        {
+            perror("server: accept()");
+            close(listen_sock);
+            close(epoll_fd);
+            exit(1);
+        }
+    }
+
+    // Set the connection socket to non-blocking mode
+    if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
+    {
+        perror("server: fcntl(conn_sock)");
+        close(conn_sock);
+        close(listen_sock);
+        close(epoll_fd);
+        exit(1);
+    }
+
+    // Fulfilled the maximum number of clients
+    if (*free_index_top == -1)
+    {
+        printf("No more room for clients\n");
+        close(conn_sock);
+        return;
+    }
+
+    int index = free_indices[(*free_index_top)--];
+    client_sockets[index] = conn_sock;
+
+    struct epoll_event event;
+    event.events = EPOLLIN | EPOLLET;
+    event.data.fd = conn_sock;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
+    {
+        perror("server: epoll_ctl()");
+        close(conn_sock);
+        close(listen_sock);
+        close(epoll_fd);
+        exit(1);
+    }
+
+    char client_ip[INET6_ADDRSTRLEN];
+    inet_ntop(PF_INET6, &client_addr6.sin6_addr, client_ip, sizeof(client_ip));
+    printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6.sin6_port));
+}
+
+void handle_client(int client_sock, int *client_sockets, int index)
+{
+    char buf[BUFFER_SIZE];
+    ssize_t received_bytes;
+    while ((received_bytes = recv(client_sock, buf, sizeof(buf) - 1, 0)) > 0)
+    {
+        printf("received_bytes: %ld\n", received_bytes);
+        buf[received_bytes] = '\0'; // Null-terminate the string
+        if (send(client_sock, buf, received_bytes, 0) == -1)
+        {
+            perror("server: send()");
+            close(client_sock);
+            client_sockets[index] = -1;
+            exit(1);
+        }
+    }
+
+    if (received_bytes == -1)
+    {
+        if (errno != EAGAIN)
+        {
+            perror("server: recv()");
+            close(client_sock);
+            client_sockets[index] = -1;
+            exit(1);
+        }
+    }
+    else if (received_bytes == 0)
+    {
+        printf("Connection closed\n");
+        close(client_sock);
+        client_sockets[index] = -1;
+    }
 }
