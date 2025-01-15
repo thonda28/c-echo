@@ -10,6 +10,8 @@
 
 #define BUFFER_SIZE 256
 
+int create_connected_socket(const char *ip, const char *port);
+
 int main(int argc, char **argv)
 {
     // Check if the IP address and port number are provided
@@ -19,23 +21,68 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    // Create a connected socket
+    int sock = create_connected_socket(argv[1], argv[2]);
+
+    while (1)
+    {
+        char buf[BUFFER_SIZE];
+        fgets(buf, sizeof(buf), stdin); // Null-terminate the string
+
+        size_t len = strlen(buf);
+        ssize_t sent_bytes = send(sock, buf, len, 0);
+        if (sent_bytes == -1)
+        {
+            perror("client: send()");
+            close(sock);
+            exit(1);
+        }
+        else if (sent_bytes == 0)
+        {
+            printf("Connection closed by server\n");
+            close(sock);
+            exit(0);
+        }
+
+        ssize_t received_bytes = recv(sock, buf, sizeof(buf) - 1, 0);
+        if (received_bytes == -1)
+        {
+            perror("client: recv()");
+            close(sock);
+            exit(1);
+        }
+        else if (received_bytes == 0)
+        {
+            printf("Connection closed by server\n");
+            close(sock);
+            exit(0);
+        }
+
+        printf("%s", buf);
+    }
+
+    close(sock);
+
+    return 0;
+}
+
+int create_connected_socket(const char *ip, const char *port_str)
+{
     // Parse the IP address
     struct sockaddr_in server_addr4;
-    memset(&server_addr4, 0, sizeof(server_addr4));
-    int is_ipv4 = inet_pton(PF_INET, argv[1], &server_addr4.sin_addr);
-
     struct sockaddr_in6 server_addr6;
+    memset(&server_addr4, 0, sizeof(server_addr4));
     memset(&server_addr6, 0, sizeof(server_addr6));
-    int is_ipv6 = inet_pton(PF_INET6, argv[1], &server_addr6.sin6_addr);
-
+    int is_ipv4 = inet_pton(PF_INET, ip, &server_addr4.sin_addr);
+    int is_ipv6 = inet_pton(PF_INET6, ip, &server_addr6.sin6_addr);
     if (is_ipv4 <= 0 && is_ipv6 <= 0)
     {
-        printf("Invalid IP address: %s\n", argv[1]);
+        printf("Invalid IP address: %s\n", ip);
         exit(1);
     }
 
     // Parse the port number
-    long port = parse_port(argv[2]);
+    long port = parse_port(port_str);
     printf("Port: %ld\n", port);
 
     // Create a socket and connect to the server
@@ -82,46 +129,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    printf("Connected to %s, %ld\n", argv[1], port);
-
-    while (1)
-    {
-        char buf[BUFFER_SIZE];
-        fgets(buf, sizeof(buf), stdin); // Null-terminate the string
-
-        size_t len = strlen(buf);
-        ssize_t sent_bytes = send(sock, buf, len, 0);
-        if (sent_bytes == -1)
-        {
-            perror("client: send()");
-            close(sock);
-            exit(1);
-        }
-        else if (sent_bytes == 0)
-        {
-            printf("Connection closed by server\n");
-            close(sock);
-            exit(0);
-        }
-
-        ssize_t received_bytes = recv(sock, buf, sizeof(buf) - 1, 0);
-        if (received_bytes == -1)
-        {
-            perror("client: recv()");
-            close(sock);
-            exit(1);
-        }
-        else if (received_bytes == 0)
-        {
-            printf("Connection closed by server\n");
-            close(sock);
-            exit(0);
-        }
-
-        printf("%s", buf);
-    }
-
-    close(sock);
-
-    return 0;
+    printf("Connected to %s, %ld\n", ip, port);
+    return sock;
 }
