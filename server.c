@@ -124,24 +124,20 @@ int main(int argc, char **argv)
             {
                 int conn_sock = events[i].data.fd;
                 // TODO: Manage the client socket using hash table
-                for (int j = 0; j < MAX_CLIENTS; j++)
+                if (contains(client_socket_manager.sockets, MAX_CLIENTS, conn_sock))
                 {
-                    if (client_socket_manager.sockets[j] == conn_sock)
+                    int res = handle_client(conn_sock);
+                    if (res == -1)
                     {
-                        int res = handle_client(conn_sock);
-                        if (res == -1)
-                        {
-                            remove_socket(&client_socket_manager, conn_sock);
-                            close(conn_sock);
-                            close(epoll_fd);
-                            exit(1);
-                        }
-                        else if (res == 0)
-                        {
-                            remove_socket(&client_socket_manager, conn_sock);
-                            close(conn_sock);
-                        }
-                        break;
+                        remove_socket(&client_socket_manager, conn_sock);
+                        close(conn_sock);
+                        close(epoll_fd);
+                        exit(1);
+                    }
+                    else if (res == 0)
+                    {
+                        remove_socket(&client_socket_manager, conn_sock);
+                        close(conn_sock);
                     }
                 }
             }
