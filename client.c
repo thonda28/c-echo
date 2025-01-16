@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     while (1)
     {
         char buf[BUFFER_SIZE];
-        fgets(buf, sizeof(buf), stdin); // Null-terminate the string
+        fgets(buf, BUFFER_SIZE, stdin); // Null-terminate the string
 
         size_t len = strlen(buf);
         ssize_t sent_bytes = send(sock, buf, len, 0);
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
             exit(0);
         }
 
-        ssize_t received_bytes = recv(sock, buf, sizeof(buf) - 1, 0);
+        ssize_t received_bytes = recv(sock, buf, BUFFER_SIZE - 1, 0);
         if (received_bytes == -1)
         {
             perror("client: recv()");

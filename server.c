@@ -318,7 +318,7 @@ void handle_client(int client_sock, int *client_sockets, int index)
 {
     char buf[BUFFER_SIZE];
     ssize_t received_bytes;
-    while ((received_bytes = recv(client_sock, buf, sizeof(buf) - 1, 0)) > 0)
+    while ((received_bytes = recv(client_sock, buf, BUFFER_SIZE - 1, 0)) > 0)
     {
         printf("received_bytes: %ld\n", received_bytes);
         buf[received_bytes] = '\0'; // Null-terminate the string
