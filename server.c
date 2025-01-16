@@ -17,7 +17,7 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
-void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
+int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
 void handle_client(int client_sock, int *client_sockets, int index);
 
 int main(int argc, char **argv)
@@ -213,7 +213,12 @@ int main(int argc, char **argv)
             // Check if the event is for the listen socket
             if (events[i].data.fd == listen_sock_v4 || events[i].data.fd == listen_sock_v6)
             {
-                handle_new_connection(events[i].data.fd, epoll_fd, client_sockets, free_indices, &free_index_top);
+                int res = handle_new_connection(events[i].data.fd, epoll_fd, client_sockets, free_indices, &free_index_top);
+                if (res == -1)
+                {
+                    close(events[i].data.fd);
+                    close(epoll_fd);
+                }
             }
             // Check if the event is for a client socket
             else
@@ -245,7 +250,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
+int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
 {
     struct sockaddr_storage client_addr;
     socklen_t addr_len = sizeof(client_addr);
@@ -255,14 +260,12 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     {
         if (errno == EAGAIN)
         {
-            return;
+            return 0;
         }
         else
         {
             perror("server: accept()");
-            close(listen_sock);
-            close(epoll_fd);
-            exit(1);
+            return -1;
         }
     }
 
@@ -271,9 +274,7 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     {
         perror("server: fcntl(conn_sock)");
         close(conn_sock);
-        close(listen_sock);
-        close(epoll_fd);
-        exit(1);
+        return -1;
     }
 
     // Fulfilled the maximum number of clients
@@ -281,7 +282,7 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     {
         puts("No more room for clients\n");
         close(conn_sock);
-        return;
+        return 0;
     }
 
     int index = free_indices[(*free_index_top)--];
@@ -294,9 +295,7 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     {
         perror("server: epoll_ctl()");
         close(conn_sock);
-        close(listen_sock);
-        close(epoll_fd);
-        exit(1);
+        return -1;
     }
 
     char client_ip[INET6_ADDRSTRLEN];
@@ -312,6 +311,8 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
         inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip));
         printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6->sin6_port));
     }
+
+    return 0;
 }
 
 void handle_client(int client_sock, int *client_sockets, int index)
