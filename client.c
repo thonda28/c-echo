@@ -42,12 +42,6 @@ int main(int argc, char **argv)
             close(sock);
             exit(1);
         }
-        else if (sent_bytes == 0)
-        {
-            printf("Connection closed by server\n");
-            close(sock);
-            exit(0);
-        }
 
         ssize_t received_bytes = recv(sock, buf, BUFFER_SIZE - 1, 0);
         if (received_bytes == -1)
@@ -58,7 +52,7 @@ int main(int argc, char **argv)
         }
         else if (received_bytes == 0)
         {
-            printf("Connection closed by server\n");
+            puts("Connection closed by server\n");
             close(sock);
             exit(0);
         }

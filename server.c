@@ -108,7 +108,7 @@ int main(int argc, char **argv)
 
     if (listen_sock_v4 == -1 && listen_sock_v6 == -1)
     {
-        printf("server: failed to bind any sockets\n");
+        puts("server: failed to bind any sockets\n");
         exit(1);
     }
 
@@ -279,7 +279,7 @@ void handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, i
     // Fulfilled the maximum number of clients
     if (*free_index_top == -1)
     {
-        printf("No more room for clients\n");
+        puts("No more room for clients\n");
         close(conn_sock);
         return;
     }
@@ -343,7 +343,7 @@ void handle_client(int client_sock, int *client_sockets, int index)
     }
     else if (received_bytes == 0)
     {
-        printf("Connection closed\n");
+        puts("Connection closed\n");
         close(client_sock);
         client_sockets[index] = -1;
     }
