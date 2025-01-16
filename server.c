@@ -18,7 +18,7 @@
 #define MAX_EVENTS 10
 
 int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
-void handle_client(int client_sock, int *client_sockets, int index);
+int handle_client(int client_sock);
 
 int main(int argc, char **argv)
 {
@@ -229,9 +229,19 @@ int main(int argc, char **argv)
                 {
                     if (client_sockets[j] == conn_sock)
                     {
-                        handle_client(conn_sock, client_sockets, j);
-                        if (client_sockets[j] == -1)
+                        int res = handle_client(conn_sock);
+                        if (res == -1)
                         {
+                            close(conn_sock);
+                            client_sockets[j] = -1;
+                            free_indices[++free_index_top] = j;
+                            close(epoll_fd);
+                            exit(1);
+                        }
+                        else if (res == 0)
+                        {
+                            close(conn_sock);
+                            client_sockets[j] = -1;
                             free_indices[++free_index_top] = j;
                         }
                         break;
@@ -315,7 +325,7 @@ int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, in
     return 0;
 }
 
-void handle_client(int client_sock, int *client_sockets, int index)
+int handle_client(int client_sock)
 {
     char buf[BUFFER_SIZE];
     ssize_t received_bytes;
@@ -326,9 +336,7 @@ void handle_client(int client_sock, int *client_sockets, int index)
         if (send(client_sock, buf, received_bytes, 0) == -1)
         {
             perror("server: send()");
-            close(client_sock);
-            client_sockets[index] = -1;
-            exit(1);
+            return -1;
         }
     }
 
@@ -337,15 +345,14 @@ void handle_client(int client_sock, int *client_sockets, int index)
         if (errno != EAGAIN)
         {
             perror("server: recv()");
-            close(client_sock);
-            client_sockets[index] = -1;
-            exit(1);
+            return -1;
         }
     }
     else if (received_bytes == 0)
     {
         puts("Connection closed\n");
-        close(client_sock);
-        client_sockets[index] = -1;
+        return 0;
     }
+
+    return 1;
 }
