@@ -17,6 +17,7 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
+int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen_sock_v6);
 int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
 int handle_client(int client_sock);
 
@@ -39,81 +40,17 @@ int main(int argc, char **argv)
         printf("Invalid port number: %s\n", argv[1]);
         exit(1);
     }
-    printf("Port: %d\n", port);
 
-    struct addrinfo hints, *res, *res0;
+    // Create listen sockets
     int listen_sock_v4 = -1;
     int listen_sock_v6 = -1;
-    int yes = 1;
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = PF_UNSPEC; // Allow IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // For wildcard IP address
-
-    if (getaddrinfo(NULL, argv[1], &hints, &res0) != 0)
+    if (create_listen_sockets(argv[1], &listen_sock_v4, &listen_sock_v6) == -1)
     {
-        perror("server: getaddrinfo()");
+        puts("Failed to create listen sockets\n");
         exit(1);
     }
 
-    for (res = res0; res != NULL; res = res->ai_next)
-    {
-        int listen_sock;
-        if ((listen_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
-        {
-            perror("server: socket()");
-            continue;
-        }
-
-        // Set the socket option to reuse the address
-        setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-
-        if (res->ai_family == PF_INET6)
-        {
-            // Set the socket option to allow only IPv6 connections
-            if (setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
-            {
-                perror("server: setsockopt()");
-                close(listen_sock);
-                continue;
-            };
-        }
-
-        if (bind(listen_sock, res->ai_addr, res->ai_addrlen) == -1)
-        {
-            perror("server: bind()");
-            close(listen_sock);
-            continue;
-        }
-
-        if (listen(listen_sock, 5) == -1)
-        {
-            perror("server: listen()");
-            close(listen_sock);
-            exit(1);
-        }
-
-        if (res->ai_family == PF_INET)
-        {
-            listen_sock_v4 = listen_sock;
-        }
-        else if (res->ai_family == PF_INET6)
-        {
-            listen_sock_v6 = listen_sock;
-        }
-    }
-
-    freeaddrinfo(res0);
-
-    if (listen_sock_v4 == -1 && listen_sock_v6 == -1)
-    {
-        puts("server: failed to bind any sockets\n");
-        exit(1);
-    }
-
-    printf("listen_sock_v4: %d\n", listen_sock_v4);
-    printf("listen_sock_v6: %d\n", listen_sock_v6);
+    printf("Listening on port %s\n", argv[1]);
 
     // Create an epoll instance
     int epoll_fd;
@@ -256,6 +193,80 @@ int main(int argc, char **argv)
     if (listen_sock_v6 != -1)
         close(listen_sock_v6);
     close(epoll_fd);
+
+    return 0;
+}
+
+int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen_sock_v6)
+{
+    struct addrinfo hints, *res, *res0;
+    int yes = 1;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC; // Allow IPv4 or IPv6
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE; // For wildcard IP address
+
+    if (getaddrinfo(NULL, port_str, &hints, &res0) != 0)
+    {
+        perror("server: getaddrinfo()");
+        return -1;
+    }
+
+    for (res = res0; res != NULL; res = res->ai_next)
+    {
+        int listen_sock;
+        if ((listen_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+        {
+            perror("server: socket()");
+            continue;
+        }
+
+        // Set the socket option to reuse the address
+        setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
+        if (res->ai_family == PF_INET6)
+        {
+            // Set the socket option to allow only IPv6 connections
+            if (setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
+            {
+                perror("server: setsockopt()");
+                close(listen_sock);
+                continue;
+            };
+        }
+
+        if (bind(listen_sock, res->ai_addr, res->ai_addrlen) == -1)
+        {
+            perror("server: bind()");
+            close(listen_sock);
+            continue;
+        }
+
+        if (listen(listen_sock, 5) == -1)
+        {
+            perror("server: listen()");
+            close(listen_sock);
+            return -1;
+        }
+
+        if (res->ai_family == PF_INET)
+        {
+            *listen_sock_v4 = listen_sock;
+        }
+        else if (res->ai_family == PF_INET6)
+        {
+            *listen_sock_v6 = listen_sock;
+        }
+    }
+
+    freeaddrinfo(res0);
+
+    if (*listen_sock_v4 == -1 && *listen_sock_v6 == -1)
+    {
+        puts("server: failed to bind any sockets\n");
+        return -1;
+    }
 
     return 0;
 }
