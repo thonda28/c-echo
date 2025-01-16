@@ -54,7 +54,7 @@ int main(int argc, char **argv)
         {
             puts("Connection closed by server\n");
             close(sock);
-            exit(0);
+            exit(1);
         }
 
         printf("%s", buf);

@@ -70,7 +70,16 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (fcntl(listen_sock, F_SETFL, O_NONBLOCK) == -1)
+        // Set the listen socket to non-blocking mode
+        int flags = fcntl(listen_sock, F_GETFL, 0);
+        if (flags == -1)
+        {
+            perror("server: fcntl()");
+            close_all_sockets(&listen_socket_manager);
+            close(epoll_fd);
+            exit(1);
+        }
+        if (fcntl(listen_sock, F_SETFL, flags | O_NONBLOCK) == -1)
         {
             perror("server: fcntl()");
             close_all_sockets(&listen_socket_manager);
@@ -225,7 +234,7 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
 
     if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &addr_len)) == -1)
     {
-        if (errno == EAGAIN)
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
             return 0;
         }
@@ -237,7 +246,14 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
     }
 
     // Set the connection socket to non-blocking mode
-    if (fcntl(conn_sock, F_SETFL, O_NONBLOCK) == -1)
+    int flags = fcntl(conn_sock, F_GETFL, 0);
+    if (flags == -1)
+    {
+        perror("server: fcntl(conn_sock)");
+        close(conn_sock);
+        return -1;
+    }
+    if (fcntl(conn_sock, F_SETFL, flags | O_NONBLOCK) == -1)
     {
         perror("server: fcntl(conn_sock)");
         close(conn_sock);
@@ -296,7 +312,11 @@ int handle_client(int client_sock)
 
     if (received_bytes == -1)
     {
-        if (errno != EAGAIN)
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            return 1;
+        }
+        else
         {
             perror("server: recv()");
             return -1;
