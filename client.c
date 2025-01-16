@@ -22,7 +22,12 @@ int main(int argc, char **argv)
     }
 
     // Create a connected socket
-    int sock = create_connected_socket(argv[1], argv[2]);
+    int sock;
+    if ((sock = create_connected_socket(argv[1], argv[2])) == -1)
+    {
+        puts("Failed to create a connected socket\n");
+        exit(1);
+    }
 
     while (1)
     {
@@ -78,12 +83,16 @@ int create_connected_socket(const char *ip, const char *port_str)
     if (is_ipv4 <= 0 && is_ipv6 <= 0)
     {
         printf("Invalid IP address: %s\n", ip);
-        exit(1);
+        return -1;
     }
 
     // Parse the port number
-    long port = parse_port(port_str);
-    printf("Port: %ld\n", port);
+    int port;
+    if ((port = parse_port(port_str)) == -1)
+    {
+        printf("Invalid port number: %s\n", port_str);
+        return -1;
+    }
 
     // Create a socket and connect to the server
     int sock;
@@ -92,7 +101,7 @@ int create_connected_socket(const char *ip, const char *port_str)
         if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
         {
             perror("client: socket()");
-            exit(1);
+            return -1;
         }
 
         server_addr4.sin_family = PF_INET;
@@ -102,7 +111,7 @@ int create_connected_socket(const char *ip, const char *port_str)
         {
             perror("client: connect() using IPv4");
             close(sock);
-            exit(1);
+            return -1;
         }
     }
     else if (is_ipv6 == 1)
@@ -110,7 +119,7 @@ int create_connected_socket(const char *ip, const char *port_str)
         if ((sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
         {
             perror("client: socket() using IPv6");
-            exit(1);
+            return -1;
         }
 
         server_addr6.sin6_family = PF_INET6;
@@ -120,15 +129,15 @@ int create_connected_socket(const char *ip, const char *port_str)
         {
             perror("client: connect() using IPv6");
             close(sock);
-            exit(1);
+            return -1;
         }
     }
     else
     {
         puts("Reached the unreachable");
-        exit(1);
+        return -1;
     }
 
-    printf("Connected to %s, %ld\n", ip, port);
+    printf("Connected to %s, %d\n", ip, port);
     return sock;
 }

@@ -33,8 +33,13 @@ int main(int argc, char **argv)
     errno = 0;
 
     // Parse the port number
-    long port = parse_port(argv[1]);
-    printf("Port: %ld\n", port);
+    int port;
+    if ((port = parse_port(argv[1])) == -1)
+    {
+        printf("Invalid port number: %s\n", argv[1]);
+        exit(1);
+    }
+    printf("Port: %d\n", port);
 
     struct addrinfo hints, *res, *res0;
     int listen_sock_v4 = -1;
