@@ -17,7 +17,7 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
-int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen_sock_v6);
+int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager);
 int handle_client(int client_sock);
 
@@ -42,9 +42,9 @@ int main(int argc, char **argv)
     }
 
     // Create listen sockets
-    int listen_sock_v4 = -1;
-    int listen_sock_v6 = -1;
-    if (create_listen_sockets(argv[1], &listen_sock_v4, &listen_sock_v6) == -1)
+    SocketManager listen_socket_manager;
+    init_socket_manager(&listen_socket_manager);
+    if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
     {
         puts("Failed to create listen sockets\n");
         exit(1);
@@ -57,61 +57,34 @@ int main(int argc, char **argv)
     if ((epoll_fd = epoll_create1(0)) == -1)
     {
         perror("server: epoll_create1()");
-        if (listen_sock_v4 != -1)
-            close(listen_sock_v4);
-        if (listen_sock_v6 != -1)
-            close(listen_sock_v6);
+        close_all_sockets(&listen_socket_manager);
         exit(1);
     }
 
     struct epoll_event event;
-    if (listen_sock_v4 != -1)
+    for (int i = 0; i < MAX_SOCKETS; i++)
     {
-        if (fcntl(listen_sock_v4, F_SETFL, O_NONBLOCK) == -1)
+        int listen_sock = listen_socket_manager.sockets[i];
+        if (listen_sock == -1)
         {
-            perror("server: fcntl(listen_sock_v4)");
-            close(listen_sock_v4);
-            if (listen_sock_v6 != -1)
-                close(listen_sock_v6);
+            continue;
+        }
+
+        if (fcntl(listen_sock, F_SETFL, O_NONBLOCK) == -1)
+        {
+            perror("server: fcntl()");
+            close_all_sockets(&listen_socket_manager);
             close(epoll_fd);
             exit(1);
         }
         event.events = EPOLLIN;
-        event.data.fd = listen_sock_v4;
+        event.data.fd = listen_sock;
 
         // Add the listen socket to the epoll instance
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock_v4, &event) == -1)
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
         {
-            perror("server: epoll_ctl(listen_sock_v4)");
-            close(listen_sock_v4);
-            if (listen_sock_v6 != -1)
-                close(listen_sock_v6);
-            close(epoll_fd);
-            exit(1);
-        }
-    }
-
-    if (listen_sock_v6 != -1)
-    {
-        if (fcntl(listen_sock_v6, F_SETFL, O_NONBLOCK) == -1)
-        {
-            perror("server: fcntl(listen_sock_v6)");
-            close(listen_sock_v6);
-            if (listen_sock_v4 != -1)
-                close(listen_sock_v4);
-            close(epoll_fd);
-            exit(1);
-        }
-        event.events = EPOLLIN;
-        event.data.fd = listen_sock_v6;
-
-        // Add the listen socket to the epoll instance
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock_v6, &event) == -1)
-        {
-            perror("server: epoll_ctl(listen_sock_v6)");
-            close(listen_sock_v6);
-            if (listen_sock_v4 != -1)
-                close(listen_sock_v4);
+            perror("server: epoll_ctl()");
+            close_all_sockets(&listen_socket_manager);
             close(epoll_fd);
             exit(1);
         }
@@ -129,10 +102,7 @@ int main(int argc, char **argv)
         if (nfds == -1)
         {
             perror("server: epoll_wait()");
-            if (listen_sock_v4 != -1)
-                close(listen_sock_v4);
-            if (listen_sock_v6 != -1)
-                close(listen_sock_v6);
+            close_all_sockets(&listen_socket_manager);
             close(epoll_fd);
             exit(1);
         }
@@ -140,7 +110,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < nfds; i++)
         {
             // Check if the event is for the listen socket
-            if (events[i].data.fd == listen_sock_v4 || events[i].data.fd == listen_sock_v6)
+            if (contains(listen_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
             {
                 int res = handle_new_connection(events[i].data.fd, epoll_fd, &client_socket_manager);
                 if (res == -1)
@@ -178,16 +148,13 @@ int main(int argc, char **argv)
         }
     }
 
-    if (listen_sock_v4 != -1)
-        close(listen_sock_v4);
-    if (listen_sock_v6 != -1)
-        close(listen_sock_v6);
+    close_all_sockets(&listen_socket_manager);
     close(epoll_fd);
 
     return 0;
 }
 
-int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen_sock_v6)
+int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager)
 {
     struct addrinfo hints, *res, *res0;
     int yes = 1;
@@ -240,19 +207,12 @@ int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen
             return -1;
         }
 
-        if (res->ai_family == PF_INET)
-        {
-            *listen_sock_v4 = listen_sock;
-        }
-        else if (res->ai_family == PF_INET6)
-        {
-            *listen_sock_v6 = listen_sock;
-        }
+        add_socket(listen_socket_manager, listen_sock);
     }
 
     freeaddrinfo(res0);
 
-    if (*listen_sock_v4 == -1 && *listen_sock_v6 == -1)
+    if (listen_socket_manager->top == MAX_SOCKETS - 1)
     {
         puts("server: failed to bind any sockets\n");
         return -1;

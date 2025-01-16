@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -39,6 +40,18 @@ int remove_socket(SocketManager *manager, int sock)
     return -1;
 }
 
+int close_all_sockets(SocketManager *manager)
+{
+    for (int i = 0; i < MAX_SOCKETS; i++)
+    {
+        if (manager->sockets[i] != -1)
+        {
+            close(manager->sockets[i]);
+        }
+    }
+    return 0;
+}
+
 int parse_port(const char *port_str)
 {
     char *endptr;
@@ -49,4 +62,16 @@ int parse_port(const char *port_str)
         return -1;
     }
     return (int)port;
+}
+
+bool contains(int *array, int size, int value)
+{
+    for (int i = 0; i < size; i++)
+    {
+        if (array[i] == value)
+        {
+            return true;
+        }
+    }
+    return false;
 }
