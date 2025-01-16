@@ -18,7 +18,7 @@
 #define MAX_EVENTS 10
 
 int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen_sock_v6);
-int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top);
+int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager);
 int handle_client(int client_sock);
 
 int main(int argc, char **argv)
@@ -119,16 +119,8 @@ int main(int argc, char **argv)
 
     struct epoll_event events[MAX_EVENTS];
     // Manage the client sockets using stack
-    int client_sockets[MAX_CLIENTS];
-    int free_indices[MAX_CLIENTS];
-    int free_index_top = MAX_CLIENTS - 1;
-
-    // Initialize the client sockets and free indices
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        client_sockets[i] = -1;
-        free_indices[i] = i;
-    }
+    SocketManager client_socket_manager;
+    init_socket_manager(&client_socket_manager);
 
     while (1)
     {
@@ -150,7 +142,7 @@ int main(int argc, char **argv)
             // Check if the event is for the listen socket
             if (events[i].data.fd == listen_sock_v4 || events[i].data.fd == listen_sock_v6)
             {
-                int res = handle_new_connection(events[i].data.fd, epoll_fd, client_sockets, free_indices, &free_index_top);
+                int res = handle_new_connection(events[i].data.fd, epoll_fd, &client_socket_manager);
                 if (res == -1)
                 {
                     close(events[i].data.fd);
@@ -164,22 +156,20 @@ int main(int argc, char **argv)
                 // TODO: Manage the client socket using hash table
                 for (int j = 0; j < MAX_CLIENTS; j++)
                 {
-                    if (client_sockets[j] == conn_sock)
+                    if (client_socket_manager.sockets[j] == conn_sock)
                     {
                         int res = handle_client(conn_sock);
                         if (res == -1)
                         {
+                            remove_socket(&client_socket_manager, conn_sock);
                             close(conn_sock);
-                            client_sockets[j] = -1;
-                            free_indices[++free_index_top] = j;
                             close(epoll_fd);
                             exit(1);
                         }
                         else if (res == 0)
                         {
+                            remove_socket(&client_socket_manager, conn_sock);
                             close(conn_sock);
-                            client_sockets[j] = -1;
-                            free_indices[++free_index_top] = j;
                         }
                         break;
                     }
@@ -271,7 +261,7 @@ int create_listen_sockets(const char *port_str, int *listen_sock_v4, int *listen
     return 0;
 }
 
-int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, int *free_indices, int *free_index_top)
+int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager)
 {
     struct sockaddr_storage client_addr;
     socklen_t addr_len = sizeof(client_addr);
@@ -299,15 +289,12 @@ int handle_new_connection(int listen_sock, int epoll_fd, int *client_sockets, in
     }
 
     // Fulfilled the maximum number of clients
-    if (*free_index_top == -1)
+    if (add_socket(client_socket_manager, conn_sock) == -1)
     {
         puts("No more room for clients\n");
         close(conn_sock);
         return 0;
     }
-
-    int index = free_indices[(*free_index_top)--];
-    client_sockets[index] = conn_sock;
 
     struct epoll_event event;
     event.events = EPOLLIN | EPOLLET;
