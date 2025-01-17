@@ -5,14 +5,18 @@
 
 #include "utils.h"
 
-void init_socket_manager(SocketManager *manager)
+void init_socket_manager(SocketManager *manager, int max_size)
 {
-    for (int i = 0; i < MAX_SOCKETS; i++)
+    manager->sockets = (int *)malloc(max_size * sizeof(int));
+    manager->free_indices = (int *)malloc(max_size * sizeof(int));
+    manager->max_size = max_size;
+    manager->top = max_size - 1;
+
+    for (int i = 0; i < max_size; i++)
     {
         manager->sockets[i] = -1;
         manager->free_indices[i] = i;
     }
-    manager->top = MAX_SOCKETS - 1;
 }
 
 int add_socket(SocketManager *manager, int sock)
@@ -28,7 +32,7 @@ int add_socket(SocketManager *manager, int sock)
 
 int remove_socket(SocketManager *manager, int sock)
 {
-    for (int i = 0; i < MAX_SOCKETS; i++)
+    for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i] == sock)
         {
@@ -42,13 +46,15 @@ int remove_socket(SocketManager *manager, int sock)
 
 int close_all_sockets(SocketManager *manager)
 {
-    for (int i = 0; i < MAX_SOCKETS; i++)
+    for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i] != -1)
         {
             close(manager->sockets[i]);
         }
     }
+    free(manager->sockets);
+    free(manager->free_indices);
     return 0;
 }
 

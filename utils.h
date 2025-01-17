@@ -3,17 +3,15 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#define MAX_SOCKETS 30
-
 typedef struct
 {
-    // TODO: dynamically allocate the array
-    int sockets[MAX_SOCKETS];
-    int free_indices[MAX_SOCKETS];
+    int *sockets;
+    int *free_indices;
+    int max_size;
     int top;
 } SocketManager;
 
-void init_socket_manager(SocketManager *manager);
+void init_socket_manager(SocketManager *manager, int max_size);
 int add_socket(SocketManager *manager, int sock);
 int remove_socket(SocketManager *manager, int sock);
 int close_all_sockets(SocketManager *manager);

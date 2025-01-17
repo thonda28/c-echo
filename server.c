@@ -14,6 +14,7 @@
 #include "utils.h"
 
 #define BUFFER_SIZE 256
+#define MAX_LISTENS 20
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
@@ -40,7 +41,7 @@ int main(int argc, char **argv)
 
     // Create listen sockets
     SocketManager listen_socket_manager;
-    init_socket_manager(&listen_socket_manager);
+    init_socket_manager(&listen_socket_manager, MAX_LISTENS);
     if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
     {
         puts("Failed to create listen sockets\n");
@@ -70,7 +71,7 @@ int main(int argc, char **argv)
 
     struct epoll_event events[MAX_EVENTS];
     SocketManager client_socket_manager;
-    init_socket_manager(&client_socket_manager);
+    init_socket_manager(&client_socket_manager, MAX_CLIENTS);
 
     while (1)
     {
@@ -87,7 +88,7 @@ int main(int argc, char **argv)
         for (int i = 0; i < nfds; i++)
         {
             // Check if the event is for the listen socket
-            if (contains(listen_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
+            if (contains(listen_socket_manager.sockets, listen_socket_manager.max_size, events[i].data.fd))
             {
                 int listen_sock = events[i].data.fd;
                 if ((handle_new_connection(listen_sock, epoll_fd, &client_socket_manager)) == -1)
@@ -97,7 +98,7 @@ int main(int argc, char **argv)
                 }
             }
             // Check if the event is for a client socket
-            else if (contains(client_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
+            else if (contains(client_socket_manager.sockets, client_socket_manager.max_size, events[i].data.fd))
             {
                 int client_sock = events[i].data.fd;
                 if (handle_client(client_sock) <= 0)
@@ -199,7 +200,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 
     freeaddrinfo(res0);
 
-    if (listen_socket_manager->top == MAX_SOCKETS - 1)
+    if (listen_socket_manager->top == listen_socket_manager->max_size - 1)
     {
         puts("server: failed to bind any sockets\n");
         return -1;
@@ -222,7 +223,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager)
 {
     struct epoll_event event;
-    for (int i = 0; i < MAX_SOCKETS; i++)
+    for (int i = 0; i < listen_socket_manager->max_size; i++)
     {
         int listen_sock = listen_socket_manager->sockets[i];
         if (listen_sock == -1)
