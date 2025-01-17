@@ -1,6 +1,8 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +11,6 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <netdb.h>
 
 #include "utils.h"
 
@@ -18,10 +19,14 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
+int pipe_fds[2];
+
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
+int add_pipe_to_epoll(int epoll_fd);
 int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager);
 int handle_client(SocketData *client_socket_data, struct epoll_event event);
+void handle_sigint(int sig);
 
 int main(int argc, char **argv)
 {
@@ -74,6 +79,22 @@ int main(int argc, char **argv)
         goto cleanup;
     }
 
+    // Create a pipe for signal handling
+    if (pipe(pipe_fds) == -1)
+    {
+        perror("server: pipe()");
+        exit_code = 1;
+        goto cleanup;
+    }
+
+    // Add the pipe to the epoll instance
+    if (add_pipe_to_epoll(epoll_fd) == -1)
+    {
+        puts("Failed to add pipe to epoll\n");
+        exit_code = 1;
+        goto cleanup;
+    }
+
     puts("Monitoring for events...");
 
     struct epoll_event events[MAX_EVENTS];
@@ -115,6 +136,27 @@ int main(int argc, char **argv)
                     remove_socket(&client_socket_manager, socket_data->socket_fd);
                 }
             }
+            // Check if the event is for the pipe
+            else if (events[i].data.fd == pipe_fds[0])
+            {
+                int sig;
+                while (read(pipe_fds[0], &sig, sizeof(sig)) == -1)
+                {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+                    {
+                        continue;
+                    }
+                    perror("server: read()");
+                    exit_code = 1;
+                    goto cleanup;
+                }
+
+                if (sig == SIGINT)
+                {
+                    puts("Received SIGINT, exiting...");
+                    goto cleanup;
+                }
+            }
         }
     }
 
@@ -125,6 +167,8 @@ cleanup:
     }
     close_all_sockets(&client_socket_manager);
     close_all_sockets(&listen_socket_manager);
+    close_with_retry(pipe_fds[0]);
+    close_with_retry(pipe_fds[1]);
 
     if (exit_code != 0)
     {
@@ -271,6 +315,65 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
             perror("server: epoll_ctl()");
             return -1;
         }
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Add the pipe to the epoll instance.
+ *
+ * This function sets the pipe read end to non-blocking mode and adds it to the epoll instance.
+ *
+ * @param[in] epoll_fd The file descriptor of the epoll instance.
+ * @return The status of the process.
+ * @retval 0 The pipe was successfully added to the epoll instance.
+ * @retval -1 An error occurred during the process.
+ */
+int add_pipe_to_epoll(int epoll_fd)
+{
+    // Get the current flags for
+    int flags;
+    while ((flags = fcntl(pipe_fds[0], F_GETFL, 0)) == -1)
+    {
+        if (errno == EINTR)
+        {
+            continue;
+        }
+        perror("server: fcntl()");
+        return -1;
+    }
+
+    // Set the pipe read end to non-blocking mode
+    while (fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK) == -1)
+    {
+        if (errno == EINTR)
+        {
+            continue;
+        }
+        perror("server: fcntl()");
+        return -1;
+    }
+
+    // Set up a signal handler for SIGINT
+    struct sigaction sa;
+    sa.sa_handler = handle_sigint;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGINT, &sa, NULL) == -1)
+    {
+        perror("server: sigaction()");
+        return -1;
+    }
+
+    // Add the pipe read end to the epoll instance
+    struct epoll_event event;
+    event.events = EPOLLIN;
+    event.data.fd = pipe_fds[0];
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fds[0], &event) == -1)
+    {
+        perror("server: epoll_ctl()");
+        return -1;
     }
 
     return 0;
@@ -439,4 +542,24 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     }
 
     return 1;
+}
+
+/**
+ * @brief Handle the SIGINT signal
+ *
+ * This function writes the signal number to the pipe to notify the main loop to exit.
+ *
+ * @param[in] sig The signal number.
+ */
+void handle_sigint(int sig)
+{
+    while (write(pipe_fds[1], &sig, sizeof(sig)) == -1)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        {
+            continue;
+        }
+        perror("server: write()");
+        exit(1);
+    }
 }
