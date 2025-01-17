@@ -30,12 +30,8 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    // Initialize the error number
-    errno = 0;
-
     // Parse the port number
-    int port;
-    if ((port = parse_port(argv[1])) == -1)
+    if (parse_port(argv[1]) == -1)
     {
         printf("Invalid port number: %s\n", argv[1]);
         exit(1);
@@ -100,7 +96,6 @@ int main(int argc, char **argv)
     }
 
     struct epoll_event events[MAX_EVENTS];
-    // Manage the client sockets using stack
     SocketManager client_socket_manager;
     init_socket_manager(&client_socket_manager);
 
@@ -121,34 +116,38 @@ int main(int argc, char **argv)
             // Check if the event is for the listen socket
             if (contains(listen_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
             {
-                int res = handle_new_connection(events[i].data.fd, epoll_fd, &client_socket_manager);
-                if (res == -1)
+                int listen_sock = events[i].data.fd;
+                if ((handle_new_connection(listen_sock, epoll_fd, &client_socket_manager)) == -1)
                 {
-                    close(events[i].data.fd);
+                    close(listen_sock);
                     close(epoll_fd);
                 }
             }
             // Check if the event is for a client socket
+            else if (contains(client_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
+            {
+                int client_sock = events[i].data.fd;
+                int result = handle_client(client_sock);
+                if (result == -1)
+                {
+                    remove_socket(&client_socket_manager, client_sock);
+                    close(client_sock);
+                    close(epoll_fd);
+                    exit(1);
+                }
+                else if (result == 0)
+                {
+                    remove_socket(&client_socket_manager, client_sock);
+                    close(client_sock);
+                }
+            }
+            // Unreachable
             else
             {
-                int conn_sock = events[i].data.fd;
-                // TODO: Manage the client socket using hash table
-                if (contains(client_socket_manager.sockets, MAX_CLIENTS, conn_sock))
-                {
-                    int res = handle_client(conn_sock);
-                    if (res == -1)
-                    {
-                        remove_socket(&client_socket_manager, conn_sock);
-                        close(conn_sock);
-                        close(epoll_fd);
-                        exit(1);
-                    }
-                    else if (res == 0)
-                    {
-                        remove_socket(&client_socket_manager, conn_sock);
-                        close(conn_sock);
-                    }
-                }
+                puts("Unknown socket\n");
+                close(events[i].data.fd);
+                close(epoll_fd);
+                exit(1);
             }
         }
     }
@@ -169,9 +168,10 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // For wildcard IP address
 
-    if (getaddrinfo(NULL, port_str, &hints, &res0) != 0)
+    int getaddrinfo_result;
+    if ((getaddrinfo_result = getaddrinfo(NULL, port_str, &hints, &res0)) != 0)
     {
-        perror("server: getaddrinfo()");
+        printf("server: getaddrinfo(): %s(%d)", gai_strerror(getaddrinfo_result), getaddrinfo_result);
         return -1;
     }
 
@@ -185,14 +185,19 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
         }
 
         // Set the socket option to reuse the address
-        setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+        if (setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        {
+            perror("server: setsockopt(SOL_SOCKET, SO_REUSEADDR)");
+            close(listen_sock);
+            continue;
+        }
 
         if (res->ai_family == PF_INET6)
         {
             // Set the socket option to allow only IPv6 connections
             if (setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
             {
-                perror("server: setsockopt()");
+                perror("server: setsockopt(IPPROTO_IPV6, IPV6_V6ONLY)");
                 close(listen_sock);
                 continue;
             };
@@ -282,13 +287,21 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
     if (client_addr.ss_family == PF_INET)
     {
         struct sockaddr_in *client_addr4 = (struct sockaddr_in *)&client_addr;
-        inet_ntop(PF_INET, &client_addr4->sin_addr, client_ip, sizeof(client_ip));
+        if (inet_ntop(PF_INET, &client_addr4->sin_addr, client_ip, sizeof(client_ip)) == NULL)
+        {
+            perror("server: inet_ntop(PF_INET)");
+            return -1;
+        }
         printf("Connection from %s, %d\n", client_ip, ntohs(client_addr4->sin_port));
     }
     else if (client_addr.ss_family == PF_INET6)
     {
         struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)&client_addr;
-        inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip));
+        if (inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip)) == NULL)
+        {
+            perror("server: inet_ntop(PF_INET6)");
+            return -1;
+        }
         printf("Connection from %s, %d\n", client_ip, ntohs(client_addr6->sin6_port));
     }
 
