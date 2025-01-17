@@ -158,6 +158,18 @@ int main(int argc, char **argv)
     return 0;
 }
 
+/**
+ * @brief Create and bind listening sockets for the server.
+ *
+ * This function creates and binds listening sockets for both IPv4 and IPv6, sets the sockets
+ * to reuse the address, and adds them to the provided socket manager.
+ *
+ * @param[in] port_str The port number as a string.
+ * @param[in] listen_socket_manager The socket manager for listening sockets.
+ * @return The status of the socket creation and binding process.
+ * @retval 0 The sockets were successfully created and bound.
+ * @retval -1 An error occurred during the process.
+ */
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager)
 {
     struct addrinfo hints, *res, *res0;
@@ -231,6 +243,20 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
     return 0;
 }
 
+/**
+ * @brief Handle a new connection on the listening socket.
+ *
+ * This function accepts a new connection on the listening socket, sets the new connection
+ * socket to non-blocking mode, adds it to the epoll instance, and registers it with the
+ * client socket manager.
+ *
+ * @param[in] listen_sock The file descriptor of the listening socket.
+ * @param[in] epoll_fd The file descriptor of the epoll instance.
+ * @param[in] client_socket_manager The socket manager for client sockets.
+ * @return The status of the new connection.
+ * @retval 0 The connection was successfully accepted and registered.
+ * @retval -1 An error occurred during the process.
+ */
 int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager)
 {
     struct sockaddr_storage client_addr;
@@ -308,6 +334,19 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
     return 0;
 }
 
+/**
+ * @brief Handle the client socket
+ *
+ * This function handles communication with a connected client socket. It reads data from the client,
+ * processes it, and sends a response back to the client. The function continues to read and send data
+ * until the client disconnects or an error occurs.
+ *
+ * @param[in] client_sock The file descriptor of the client socket.
+ * @return The status of the client connection.
+ * @retval 1 The client is still connected.
+ * @retval 0 The client has disconnected.
+ * @retval -1 An error occurred during communication.
+ */
 int handle_client(int client_sock)
 {
     char buf[BUFFER_SIZE];

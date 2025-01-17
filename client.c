@@ -65,6 +65,17 @@ int main(int argc, char **argv)
     return 0;
 }
 
+/**
+ * @brief Create a connected socket to the specified IP address and port.
+ *
+ * This function creates a socket, connects it to the specified IP address and port,
+ * and returns the connected socket file descriptor.
+ *
+ * @param[in] ip The IP address to connect to.
+ * @param[in] port The port number to connect to.
+ * @return The file descriptor of the connected socket.
+ * @retval -1 An error occurred during the process.
+ */
 int create_connected_socket(const char *ip, const char *port_str)
 {
     // Parse the IP address
