@@ -18,6 +18,7 @@
 #define MAX_EVENTS 10
 
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
+int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
 int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager);
 int handle_client(int client_sock);
 
@@ -57,43 +58,15 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    struct epoll_event event;
-    for (int i = 0; i < MAX_SOCKETS; i++)
+    // Add the listen sockets to the epoll instance
+    if (add_listen_sockets_to_epoll(epoll_fd, &listen_socket_manager) == -1)
     {
-        int listen_sock = listen_socket_manager.sockets[i];
-        if (listen_sock == -1)
-        {
-            continue;
-        }
-
-        // Set the listen socket to non-blocking mode
-        int flags = fcntl(listen_sock, F_GETFL, 0);
-        if (flags == -1)
-        {
-            perror("server: fcntl()");
-            close_all_sockets(&listen_socket_manager);
-            close(epoll_fd);
-            exit(1);
-        }
-        if (fcntl(listen_sock, F_SETFL, flags | O_NONBLOCK) == -1)
-        {
-            perror("server: fcntl()");
-            close_all_sockets(&listen_socket_manager);
-            close(epoll_fd);
-            exit(1);
-        }
-        event.events = EPOLLIN;
-        event.data.fd = listen_sock;
-
-        // Add the listen socket to the epoll instance
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
-        {
-            perror("server: epoll_ctl()");
-            close_all_sockets(&listen_socket_manager);
-            close(epoll_fd);
-            exit(1);
-        }
+        close_all_sockets(&listen_socket_manager);
+        close(epoll_fd);
+        exit(1);
     }
+
+    puts("Monitoring for events...");
 
     struct epoll_event events[MAX_EVENTS];
     SocketManager client_socket_manager;
@@ -238,6 +211,54 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
     {
         puts("server: failed to bind any sockets\n");
         return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Add the listening sockets to the epoll instance.
+ *
+ * This function sets the listening sockets to non-blocking mode and adds them to the epoll instance.
+ *
+ * @param[in] epoll_fd The file descriptor of the epoll instance.
+ * @param[in] listen_socket_manager The socket manager for listening sockets.
+ * @return The status of the process.
+ * @retval 0 The sockets were successfully added to the epoll instance.
+ * @retval -1 An error occurred during the process.
+ */
+int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager)
+{
+    struct epoll_event event;
+    for (int i = 0; i < MAX_SOCKETS; i++)
+    {
+        int listen_sock = listen_socket_manager->sockets[i];
+        if (listen_sock == -1)
+        {
+            continue;
+        }
+
+        // Set the listen socket to non-blocking mode
+        int flags = fcntl(listen_sock, F_GETFL, 0);
+        if (flags == -1)
+        {
+            perror("server: fcntl()");
+            return -1;
+        }
+        if (fcntl(listen_sock, F_SETFL, flags | O_NONBLOCK) == -1)
+        {
+            perror("server: fcntl()");
+            return -1;
+        }
+        event.events = EPOLLIN;
+        event.data.fd = listen_sock;
+
+        // Add the listen socket to the epoll instance
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
+        {
+            perror("server: epoll_ctl()");
+            return -1;
+        }
     }
 
     return 0;
