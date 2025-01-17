@@ -22,8 +22,8 @@ int main(int argc, char **argv)
     }
 
     // Create a connected socket
-    int sock;
-    if ((sock = create_connected_socket(argv[1], argv[2])) == -1)
+    int socket_fd;
+    if ((socket_fd = create_connected_socket(argv[1], argv[2])) == -1)
     {
         puts("Failed to create a connected socket\n");
         exit(1);
@@ -32,35 +32,62 @@ int main(int argc, char **argv)
     while (1)
     {
         char buf[BUFFER_SIZE];
-        fgets(buf, BUFFER_SIZE, stdin); // Null-terminate the string
+        char *input = fgets(buf, BUFFER_SIZE, stdin);
+        if (input == NULL)
+        {
+            // Check if fgets() reached EOF
+            if (feof(stdin))
+            {
+                puts("EOF detected\n");
+                break;
+            }
+            else
+            {
+                perror("client: fgets()");
+                close(socket_fd);
+                exit(1);
+            }
+        }
 
+        // Send the input to the server
         size_t len = strlen(buf);
-        ssize_t sent_bytes = send(sock, buf, len, 0);
-        if (sent_bytes == -1)
+        size_t total_sent = 0;
+        while (total_sent < len)
         {
-            perror("client: send()");
-            close(sock);
-            exit(1);
+            ssize_t sent_bytes = send(socket_fd, buf + total_sent, len - total_sent, 0);
+            if (sent_bytes == -1)
+            {
+                perror("client: send()");
+                close(socket_fd);
+                exit(1);
+            }
+            total_sent += sent_bytes;
         }
 
-        ssize_t received_bytes = recv(sock, buf, BUFFER_SIZE - 1, 0);
-        if (received_bytes == -1)
+        // Receive the response from the server
+        size_t total_received = 0;
+        while (total_received < len)
         {
-            perror("client: recv()");
-            close(sock);
-            exit(1);
-        }
-        else if (received_bytes == 0)
-        {
-            puts("Connection closed by server\n");
-            close(sock);
-            exit(1);
+            ssize_t received_bytes = recv(socket_fd, buf + total_received, len - total_received, 0);
+            if (received_bytes == -1)
+            {
+                perror("client: recv()");
+                close(socket_fd);
+                exit(1);
+            }
+            else if (received_bytes == 0)
+            {
+                puts("Connection closed by server\n");
+                close(socket_fd);
+                exit(1);
+            }
+            total_received += received_bytes;
         }
 
         printf("%s", buf);
     }
 
-    close(sock);
+    close(socket_fd);
 
     return 0;
 }
@@ -100,10 +127,10 @@ int create_connected_socket(const char *ip, const char *port_str)
     }
 
     // Create a socket and connect to the server
-    int sock;
+    int socket_fd;
     if (is_ipv4 == 1)
     {
-        if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)
+        if ((socket_fd = socket(PF_INET, SOCK_STREAM, 0)) == -1)
         {
             perror("client: socket()");
             return -1;
@@ -112,16 +139,16 @@ int create_connected_socket(const char *ip, const char *port_str)
         server_addr4.sin_family = PF_INET;
         server_addr4.sin_port = htons(port);
 
-        if (connect(sock, (struct sockaddr *)&server_addr4, sizeof(server_addr4)) == -1)
+        if (connect(socket_fd, (struct sockaddr *)&server_addr4, sizeof(server_addr4)) == -1)
         {
             perror("client: connect() using IPv4");
-            close(sock);
+            close(socket_fd);
             return -1;
         }
     }
     else if (is_ipv6 == 1)
     {
-        if ((sock = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
+        if ((socket_fd = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
         {
             perror("client: socket() using IPv6");
             return -1;
@@ -130,10 +157,10 @@ int create_connected_socket(const char *ip, const char *port_str)
         server_addr6.sin6_family = PF_INET6;
         server_addr6.sin6_port = htons(port);
 
-        if (connect(sock, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
+        if (connect(socket_fd, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
         {
             perror("client: connect() using IPv6");
-            close(sock);
+            close(socket_fd);
             return -1;
         }
     }
@@ -144,5 +171,5 @@ int create_connected_socket(const char *ip, const char *port_str)
     }
 
     printf("Connected to %s, %d\n", ip, port);
-    return sock;
+    return socket_fd;
 }
