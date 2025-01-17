@@ -21,8 +21,8 @@
 void cleanup(int epoll_fd, SocketManager *listen_socket_manager, SocketManager *client_socket_manager);
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
-int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager);
-int handle_client(int client_sock);
+int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager);
+int handle_client(SocketData *client_socket_data, struct epoll_event event);
 
 int main(int argc, char **argv)
 {
@@ -92,45 +92,36 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < nfds; i++)
         {
+            SocketData *socket_data;
             // Check if the event is for the listen socket
-            if (contains(listen_socket_manager.sockets, listen_socket_manager.max_size, events[i].data.fd))
+            if ((socket_data = find_socket(&listen_socket_manager, events[i].data.fd)) != NULL)
             {
-                int listen_sock = events[i].data.fd;
-                if ((handle_new_connection(listen_sock, epoll_fd, &client_socket_manager)) == -1)
+                if ((handle_new_connection(socket_data->socket_fd, epoll_fd, &client_socket_manager)) == -1)
                 {
                     exit_code = 1;
                     goto cleanup;
                 }
             }
             // Check if the event is for a client socket
-            else if (contains(client_socket_manager.sockets, client_socket_manager.max_size, events[i].data.fd))
+            else if ((socket_data = find_socket(&client_socket_manager, events[i].data.fd)) != NULL)
             {
-                int client_sock = events[i].data.fd;
-                if (handle_client(client_sock) <= 0)
+                if (handle_client(socket_data, events[i]) <= 0)
                 {
                     // The server itself does not exit even if the processing with the client ends abnormally.
-                    remove_socket(&client_socket_manager, client_sock);
-                    close(client_sock);
+                    remove_socket(&client_socket_manager, socket_data->socket_fd);
+                    close(socket_data->socket_fd);
                 }
-            }
-            // Unreachable
-            else
-            {
-                puts("Unknown socket\n");
-                close(events[i].data.fd);
-                exit_code = 1;
-                goto cleanup;
             }
         }
     }
 
 cleanup:
-    close_all_sockets(&client_socket_manager);
-    close_all_sockets(&listen_socket_manager);
     if (epoll_fd != -1)
     {
         close(epoll_fd);
     }
+    close_all_sockets(&client_socket_manager);
+    close_all_sockets(&listen_socket_manager);
 
     if (exit_code != 0)
     {
@@ -190,47 +181,47 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 
     for (res = res0; res != NULL; res = res->ai_next)
     {
-        int listen_sock;
-        if ((listen_sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
+        int listen_socket_fd;
+        if ((listen_socket_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1)
         {
             perror("server: socket()");
             continue;
         }
 
         // Set the socket option to reuse the address
-        if (setsockopt(listen_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        if (setsockopt(listen_socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
         {
             perror("server: setsockopt(SOL_SOCKET, SO_REUSEADDR)");
-            close(listen_sock);
+            close(listen_socket_fd);
             continue;
         }
 
         if (res->ai_family == PF_INET6)
         {
             // Set the socket option to allow only IPv6 connections
-            if (setsockopt(listen_sock, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
+            if (setsockopt(listen_socket_fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
             {
                 perror("server: setsockopt(IPPROTO_IPV6, IPV6_V6ONLY)");
-                close(listen_sock);
+                close(listen_socket_fd);
                 continue;
             };
         }
 
-        if (bind(listen_sock, res->ai_addr, res->ai_addrlen) == -1)
+        if (bind(listen_socket_fd, res->ai_addr, res->ai_addrlen) == -1)
         {
             perror("server: bind()");
-            close(listen_sock);
+            close(listen_socket_fd);
             continue;
         }
 
-        if (listen(listen_sock, 5) == -1)
+        if (listen(listen_socket_fd, 5) == -1)
         {
             perror("server: listen()");
-            close(listen_sock);
+            close(listen_socket_fd);
             return -1;
         }
 
-        add_socket(listen_socket_manager, listen_sock);
+        add_socket(listen_socket_manager, listen_socket_fd);
     }
 
     freeaddrinfo(res0);
@@ -260,29 +251,29 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
     struct epoll_event event;
     for (int i = 0; i < listen_socket_manager->max_size; i++)
     {
-        int listen_sock = listen_socket_manager->sockets[i];
-        if (listen_sock == -1)
+        int listen_socket_fd = listen_socket_manager->sockets[i].socket_fd;
+        if (listen_socket_fd == -1)
         {
             continue;
         }
 
         // Set the listen socket to non-blocking mode
-        int flags = fcntl(listen_sock, F_GETFL, 0);
+        int flags = fcntl(listen_socket_fd, F_GETFL, 0);
         if (flags == -1)
         {
             perror("server: fcntl()");
             return -1;
         }
-        if (fcntl(listen_sock, F_SETFL, flags | O_NONBLOCK) == -1)
+        if (fcntl(listen_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
         {
             perror("server: fcntl()");
             return -1;
         }
         event.events = EPOLLIN;
-        event.data.fd = listen_sock;
+        event.data.fd = listen_socket_fd;
 
         // Add the listen socket to the epoll instance
-        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_sock, &event) == -1)
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_socket_fd, &event) == -1)
         {
             perror("server: epoll_ctl()");
             return -1;
@@ -299,20 +290,20 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
  * socket to non-blocking mode, adds it to the epoll instance, and registers it with the
  * client socket manager.
  *
- * @param[in] listen_sock The file descriptor of the listening socket.
+ * @param[in] listen_socket_fd The file descriptor of the listening socket.
  * @param[in] epoll_fd The file descriptor of the epoll instance.
  * @param[in] client_socket_manager The socket manager for client sockets.
  * @return The status of the new connection.
  * @retval 0 The connection was successfully accepted and registered.
  * @retval -1 An error occurred during the process.
  */
-int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager)
+int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager)
 {
     struct sockaddr_storage client_addr;
     socklen_t addr_len = sizeof(client_addr);
-    int conn_sock;
+    int conn_socket_fd;
 
-    if ((conn_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &addr_len)) == -1)
+    if ((conn_socket_fd = accept(listen_socket_fd, (struct sockaddr *)&client_addr, &addr_len)) == -1)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
@@ -326,35 +317,35 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
     }
 
     // Set the connection socket to non-blocking mode
-    int flags = fcntl(conn_sock, F_GETFL, 0);
+    int flags = fcntl(conn_socket_fd, F_GETFL, 0);
     if (flags == -1)
     {
         perror("server: fcntl(conn_sock)");
-        close(conn_sock);
+        close(conn_socket_fd);
         return -1;
     }
-    if (fcntl(conn_sock, F_SETFL, flags | O_NONBLOCK) == -1)
+    if (fcntl(conn_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
     {
         perror("server: fcntl(conn_sock)");
-        close(conn_sock);
+        close(conn_socket_fd);
         return -1;
     }
 
     // Fulfilled the maximum number of clients
-    if (add_socket(client_socket_manager, conn_sock) == -1)
+    if (add_socket(client_socket_manager, conn_socket_fd) == -1)
     {
         puts("No more room for clients\n");
-        close(conn_sock);
+        close(conn_socket_fd);
         return 0;
     }
 
     struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
-    event.data.fd = conn_sock;
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_sock, &event) == -1)
+    event.events = EPOLLIN | EPOLLOUT;
+    event.data.fd = conn_socket_fd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_socket_fd, &event) == -1)
     {
         perror("server: epoll_ctl()");
-        close(conn_sock);
+        close(conn_socket_fd);
         return -1;
     }
 
@@ -390,43 +381,57 @@ int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_s
  * processes it, and sends a response back to the client. The function continues to read and send data
  * until the client disconnects or an error occurs.
  *
- * @param[in] client_sock The file descriptor of the client socket.
+ * @param[in] client_socket_data The socket data for the client socket.
+ * @param[in] event The epoll event for the client socket.
  * @return The status of the client connection.
  * @retval 1 The client is still connected.
  * @retval 0 The client has disconnected.
  * @retval -1 An error occurred during communication.
  */
-int handle_client(int client_sock)
+int handle_client(SocketData *client_socket_data, struct epoll_event event)
 {
-    char buf[BUFFER_SIZE];
-    ssize_t received_bytes;
-    while ((received_bytes = recv(client_sock, buf, BUFFER_SIZE - 1, 0)) > 0)
+    // Check if the client socket is ready to read
+    if (event.events & EPOLLIN)
     {
-        printf("received_bytes: %ld\n", received_bytes);
-        buf[received_bytes] = '\0'; // Null-terminate the string
-        if (send(client_sock, buf, received_bytes, 0) == -1)
+        ssize_t received_bytes;
+        if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer, BUFFER_SIZE - 1, 0)) > 0)
+        {
+            printf("received_bytes: %ld\n", received_bytes);
+            client_socket_data->buffer[received_bytes] = '\0'; // Null-terminate the string
+        }
+        else if (received_bytes == 0)
+        {
+            puts("Connection closed\n");
+            return 0;
+        }
+        else
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                return 1;
+            }
+            else
+            {
+                perror("server: recv()");
+                return -1;
+            }
+        }
+    }
+
+    // Check if the client socket is ready to write
+    if (event.events & EPOLLOUT)
+    {
+        ssize_t sent_bytes;
+        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), 0)) == -1)
         {
             perror("server: send()");
             return -1;
         }
-    }
-
-    if (received_bytes == -1)
-    {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            return 1;
-        }
         else
         {
-            perror("server: recv()");
-            return -1;
+            memmove(client_socket_data->buffer, client_socket_data->buffer + sent_bytes, strlen(client_socket_data->buffer) - sent_bytes);
+            client_socket_data->buffer[strlen(client_socket_data->buffer) - sent_bytes] = '\0';
         }
-    }
-    else if (received_bytes == 0)
-    {
-        puts("Connection closed\n");
-        return 0;
     }
 
     return 1;

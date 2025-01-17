@@ -7,36 +7,48 @@
 
 void init_socket_manager(SocketManager *manager, int max_size)
 {
-    manager->sockets = (int *)malloc(max_size * sizeof(int));
+    manager->sockets = (SocketData *)malloc(max_size * sizeof(SocketData));
     manager->free_indices = (int *)malloc(max_size * sizeof(int));
     manager->max_size = max_size;
     manager->top = max_size - 1;
 
     for (int i = 0; i < max_size; i++)
     {
-        manager->sockets[i] = -1;
+        manager->sockets[i].socket_fd = -1;
         manager->free_indices[i] = i;
     }
 }
 
-int add_socket(SocketManager *manager, int sock)
+SocketData *find_socket(SocketManager *manager, int socket_fd)
+{
+    for (int i = 0; i < manager->max_size; i++)
+    {
+        if (manager->sockets[i].socket_fd == socket_fd)
+        {
+            return &manager->sockets[i];
+        }
+    }
+    return NULL;
+}
+
+int add_socket(SocketManager *manager, int socket_fd)
 {
     if (manager->top < 0)
     {
         return -1;
     }
     int index = manager->free_indices[manager->top--];
-    manager->sockets[index] = sock;
+    manager->sockets[index].socket_fd = socket_fd;
     return index;
 }
 
-int remove_socket(SocketManager *manager, int sock)
+int remove_socket(SocketManager *manager, int socket_fd)
 {
     for (int i = 0; i < manager->max_size; i++)
     {
-        if (manager->sockets[i] == sock)
+        if (manager->sockets[i].socket_fd == socket_fd)
         {
-            manager->sockets[i] = -1;
+            manager->sockets[i].socket_fd = -1;
             manager->free_indices[++manager->top] = i;
             return 0;
         }
@@ -48,7 +60,7 @@ int close_all_sockets(SocketManager *manager)
 {
     for (int i = 0; i < manager->max_size; i++)
     {
-        if (manager->sockets[i] != -1)
+        if (manager->sockets[i].socket_fd != -1)
         {
             close(manager->sockets[i]);
         }
@@ -68,16 +80,4 @@ int parse_port(const char *port_str)
         return -1;
     }
     return (int)port;
-}
-
-bool contains(int *array, int size, int value)
-{
-    for (int i = 0; i < size; i++)
-    {
-        if (array[i] == value)
-        {
-            return true;
-        }
-    }
-    return false;
 }
