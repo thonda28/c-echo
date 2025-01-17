@@ -100,15 +100,7 @@ int main(int argc, char **argv)
             else if (contains(client_socket_manager.sockets, MAX_SOCKETS, events[i].data.fd))
             {
                 int client_sock = events[i].data.fd;
-                int result = handle_client(client_sock);
-                if (result == -1)
-                {
-                    remove_socket(&client_socket_manager, client_sock);
-                    close(client_sock);
-                    close(epoll_fd);
-                    exit(1);
-                }
-                else if (result == 0)
+                if (handle_client(client_sock) <= 0)
                 {
                     remove_socket(&client_socket_manager, client_sock);
                     close(client_sock);
