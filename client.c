@@ -32,8 +32,7 @@ int main(int argc, char **argv)
     while (1)
     {
         char buf[BUFFER_SIZE];
-        char *input = fgets(buf, BUFFER_SIZE, stdin);
-        if (input == NULL)
+        if (fgets(buf, BUFFER_SIZE, stdin) == NULL)
         {
             // Check if fgets() reached EOF
             if (feof(stdin))
@@ -50,11 +49,11 @@ int main(int argc, char **argv)
         }
 
         // Send the input to the server
-        size_t len = strlen(buf);
+        size_t bytes_read = strlen(buf);
         size_t total_sent = 0;
-        while (total_sent < len)
+        while (total_sent < bytes_read)
         {
-            ssize_t sent_bytes = send(socket_fd, buf + total_sent, len - total_sent, 0);
+            ssize_t sent_bytes = send(socket_fd, buf + total_sent, bytes_read - total_sent, 0);
             if (sent_bytes == -1)
             {
                 perror("client: send()");
@@ -66,9 +65,9 @@ int main(int argc, char **argv)
 
         // Receive the response from the server
         size_t total_received = 0;
-        while (total_received < len)
+        while (total_received < bytes_read)
         {
-            ssize_t received_bytes = recv(socket_fd, buf + total_received, len - total_received, 0);
+            ssize_t received_bytes = recv(socket_fd, buf + total_received, bytes_read - total_received, 0);
             if (received_bytes == -1)
             {
                 perror("client: recv()");
@@ -84,7 +83,8 @@ int main(int argc, char **argv)
             total_received += received_bytes;
         }
 
-        printf("%s", buf);
+        // Print the received data
+        fwrite(buf, 1, total_received, stdout);
     }
 
     close(socket_fd);
