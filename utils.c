@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #include "utils.h"
 
@@ -62,7 +63,7 @@ int close_all_sockets(SocketManager *manager)
     {
         if (manager->sockets[i].socket_fd != -1)
         {
-            close(manager->sockets[i]);
+            close_with_retry(manager->sockets[i].socket_fd);
         }
     }
     free(manager->sockets);
@@ -80,4 +81,18 @@ int parse_port(const char *port_str)
         return -1;
     }
     return (int)port;
+}
+
+int close_with_retry(int fd)
+{
+    while (close(fd) == -1)
+    {
+        if (errno == EINTR)
+        {
+            continue;
+        }
+        perror("close()");
+        return -1;
+    }
+    return 0;
 }

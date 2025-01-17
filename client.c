@@ -43,7 +43,7 @@ int main(int argc, char **argv)
             else
             {
                 perror("client: fgets()");
-                close(socket_fd);
+                close_with_retry(socket_fd);
                 exit(1);
             }
         }
@@ -61,7 +61,7 @@ int main(int argc, char **argv)
                     continue;
                 }
                 perror("client: send()");
-                close(socket_fd);
+                close_with_retry(socket_fd);
                 exit(1);
             }
             total_sent += sent_bytes;
@@ -79,13 +79,13 @@ int main(int argc, char **argv)
                     continue;
                 }
                 perror("client: recv()");
-                close(socket_fd);
+                close_with_retry(socket_fd);
                 exit(1);
             }
             else if (received_bytes == 0)
             {
                 puts("Connection closed by server\n");
-                close(socket_fd);
+                close_with_retry(socket_fd);
                 exit(1);
             }
             total_received += received_bytes;
@@ -95,12 +95,12 @@ int main(int argc, char **argv)
         if (fwrite(buf, 1, total_received, stdout) != total_received)
         {
             perror("client: fwrite()");
-            close(socket_fd);
+            close_with_retry(socket_fd);
             exit(1);
         }
     }
 
-    close(socket_fd);
+    close_with_retry(socket_fd);
 
     return 0;
 }
@@ -159,7 +159,7 @@ int create_connected_socket(const char *ip, const char *port_str)
                 continue;
             }
             perror("client: connect() using IPv4");
-            close(socket_fd);
+            close_with_retry(socket_fd);
             return -1;
         }
     }
@@ -181,7 +181,7 @@ int create_connected_socket(const char *ip, const char *port_str)
                 continue;
             }
             perror("client: connect() using IPv6");
-            close(socket_fd);
+            close_with_retry(socket_fd);
             return -1;
         }
     }

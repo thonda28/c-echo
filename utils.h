@@ -26,4 +26,5 @@ int remove_socket(SocketManager *manager, int socket_fd);
 int close_all_sockets(SocketManager *manager);
 
 int parse_port(const char *port_str);
+int close_with_retry(int fd);
 #endif

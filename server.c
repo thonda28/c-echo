@@ -111,8 +111,8 @@ int main(int argc, char **argv)
                 if (handle_client(socket_data, events[i]) <= 0)
                 {
                     // The server itself does not exit even if the processing with the client ends abnormally.
+                    close_with_retry(socket_data->socket_fd);
                     remove_socket(&client_socket_manager, socket_data->socket_fd);
-                    close(socket_data->socket_fd);
                 }
             }
         }
@@ -121,7 +121,7 @@ int main(int argc, char **argv)
 cleanup:
     if (epoll_fd != -1)
     {
-        close(epoll_fd);
+        close_with_retry(epoll_fd);
     }
     close_all_sockets(&client_socket_manager);
     close_all_sockets(&listen_socket_manager);
@@ -175,7 +175,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
         if (setsockopt(listen_socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
         {
             perror("server: setsockopt(SOL_SOCKET, SO_REUSEADDR)");
-            close(listen_socket_fd);
+            close_with_retry(listen_socket_fd);
             continue;
         }
 
@@ -185,7 +185,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
             if (setsockopt(listen_socket_fd, IPPROTO_IPV6, IPV6_V6ONLY, &yes, sizeof(int)) == -1)
             {
                 perror("server: setsockopt(IPPROTO_IPV6, IPV6_V6ONLY)");
-                close(listen_socket_fd);
+                close_with_retry(listen_socket_fd);
                 continue;
             };
         }
@@ -193,14 +193,14 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
         if (bind(listen_socket_fd, res->ai_addr, res->ai_addrlen) == -1)
         {
             perror("server: bind()");
-            close(listen_socket_fd);
+            close_with_retry(listen_socket_fd);
             continue;
         }
 
         if (listen(listen_socket_fd, 5) == -1)
         {
             perror("server: listen()");
-            close(listen_socket_fd);
+            close_with_retry(listen_socket_fd);
             return -1;
         }
 
@@ -318,7 +318,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
             continue;
         }
         perror("server: fcntl(conn_sock)");
-        close(conn_socket_fd);
+        close_with_retry(conn_socket_fd);
         return -1;
     }
 
@@ -330,7 +330,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
             continue;
         }
         perror("server: fcntl(conn_sock)");
-        close(conn_socket_fd);
+        close_with_retry(conn_socket_fd);
         return -1;
     }
 
@@ -338,7 +338,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     if (add_socket(client_socket_manager, conn_socket_fd) == -1)
     {
         puts("No more room for clients\n");
-        close(conn_socket_fd);
+        close_with_retry(conn_socket_fd);
         return 0;
     }
 
@@ -348,7 +348,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_socket_fd, &event) == -1)
     {
         perror("server: epoll_ctl()");
-        close(conn_socket_fd);
+        close_with_retry(conn_socket_fd);
         return -1;
     }
 
@@ -399,7 +399,7 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
         ssize_t received_bytes;
         if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer, BUFFER_SIZE - 1, 0)) > 0)
         {
-            printf("received_bytes: %ld\n", received_bytes);
+            printf("received_bytes: %ld (fd: %d)\n", received_bytes, client_socket_data->socket_fd);
             client_socket_data->buffer[received_bytes] = '\0'; // Null-terminate the string
         }
         else if (received_bytes == 0)
