@@ -18,6 +18,7 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
+void cleanup(int epoll_fd, SocketManager *listen_socket_manager, SocketManager *client_socket_manager);
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
 int handle_new_connection(int listen_sock, int epoll_fd, SocketManager *client_socket_manager);
@@ -25,54 +26,59 @@ int handle_client(int client_sock);
 
 int main(int argc, char **argv)
 {
+    // Declare variables that need to be cleaned up later
+    int epoll_fd = -1;
+    SocketManager listen_socket_manager;
+    SocketManager client_socket_manager;
+    int exit_code = 0;
+
     // Check if the port number is provided
     if (argc != 2)
     {
         printf("Usage: %s <port>\n", argv[0]);
-        exit(1);
+        exit_code = 1;
+        goto cleanup;
     }
 
     // Parse the port number
     if (parse_port(argv[1]) == -1)
     {
         printf("Invalid port number: %s\n", argv[1]);
-        exit(1);
+        exit_code = 1;
+        goto cleanup;
     }
 
     // Create listen sockets
-    SocketManager listen_socket_manager;
     init_socket_manager(&listen_socket_manager, MAX_LISTENS);
     if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
     {
         puts("Failed to create listen sockets\n");
-        exit(1);
+        exit_code = 1;
+        goto cleanup;
     }
 
     printf("Listening on port %s\n", argv[1]);
 
     // Create an epoll instance
-    int epoll_fd;
     if ((epoll_fd = epoll_create1(0)) == -1)
     {
         perror("server: epoll_create1()");
-        close_all_sockets(&listen_socket_manager);
-        exit(1);
+        exit_code = 1;
+        goto cleanup;
     }
 
     // Add the listen sockets to the epoll instance
     if (add_listen_sockets_to_epoll(epoll_fd, &listen_socket_manager) == -1)
     {
-        close_all_sockets(&listen_socket_manager);
-        close(epoll_fd);
-        exit(1);
+        puts("Failed to add listen sockets to epoll\n");
+        exit_code = 1;
+        goto cleanup;
     }
 
     puts("Monitoring for events...");
 
     struct epoll_event events[MAX_EVENTS];
-    SocketManager client_socket_manager;
     init_socket_manager(&client_socket_manager, MAX_CLIENTS);
-
     while (1)
     {
         // Wait for events indefinitely
@@ -80,9 +86,8 @@ int main(int argc, char **argv)
         if (nfds == -1)
         {
             perror("server: epoll_wait()");
-            close_all_sockets(&listen_socket_manager);
-            close(epoll_fd);
-            exit(1);
+            exit_code = 1;
+            goto cleanup;
         }
 
         for (int i = 0; i < nfds; i++)
@@ -93,8 +98,8 @@ int main(int argc, char **argv)
                 int listen_sock = events[i].data.fd;
                 if ((handle_new_connection(listen_sock, epoll_fd, &client_socket_manager)) == -1)
                 {
-                    close(listen_sock);
-                    close(epoll_fd);
+                    exit_code = 1;
+                    goto cleanup;
                 }
             }
             // Check if the event is for a client socket
@@ -103,6 +108,7 @@ int main(int argc, char **argv)
                 int client_sock = events[i].data.fd;
                 if (handle_client(client_sock) <= 0)
                 {
+                    // The server itself does not exit even if the processing with the client ends abnormally.
                     remove_socket(&client_socket_manager, client_sock);
                     close(client_sock);
                 }
@@ -112,16 +118,45 @@ int main(int argc, char **argv)
             {
                 puts("Unknown socket\n");
                 close(events[i].data.fd);
-                close(epoll_fd);
-                exit(1);
+                exit_code = 1;
+                goto cleanup;
             }
         }
     }
 
+cleanup:
+    close_all_sockets(&client_socket_manager);
     close_all_sockets(&listen_socket_manager);
-    close(epoll_fd);
+    if (epoll_fd != -1)
+    {
+        close(epoll_fd);
+    }
 
+    if (exit_code != 0)
+    {
+        exit(exit_code);
+    }
     return 0;
+}
+
+/**
+ * @brief Clean up the resources used by the server.
+ *
+ * This function closes all the client and listen sockets and the epoll instance.
+ *
+ * @param[in] epoll_fd The file descriptor of the epoll instance.
+ * @param[in] listen_socket_manager The socket manager for listening sockets.
+ * @param[in] client_socket_manager The socket manager for client sockets.
+ * @return void
+ */
+void cleanup(int epoll_fd, SocketManager *listen_socket_manager, SocketManager *client_socket_manager)
+{
+    close_all_sockets(client_socket_manager);
+    close_all_sockets(listen_socket_manager);
+    if (epoll_fd != -1)
+    {
+        close(epoll_fd);
+    }
 }
 
 /**
