@@ -18,7 +18,6 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
-void cleanup(int epoll_fd, SocketManager *listen_socket_manager, SocketManager *client_socket_manager);
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
 int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager);
@@ -85,6 +84,10 @@ int main(int argc, char **argv)
         int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (nfds == -1)
         {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             perror("server: epoll_wait()");
             exit_code = 1;
             goto cleanup;
@@ -128,26 +131,6 @@ cleanup:
         exit(exit_code);
     }
     return 0;
-}
-
-/**
- * @brief Clean up the resources used by the server.
- *
- * This function closes all the client and listen sockets and the epoll instance.
- *
- * @param[in] epoll_fd The file descriptor of the epoll instance.
- * @param[in] listen_socket_manager The socket manager for listening sockets.
- * @param[in] client_socket_manager The socket manager for client sockets.
- * @return void
- */
-void cleanup(int epoll_fd, SocketManager *listen_socket_manager, SocketManager *client_socket_manager)
-{
-    close_all_sockets(client_socket_manager);
-    close_all_sockets(listen_socket_manager);
-    if (epoll_fd != -1)
-    {
-        close(epoll_fd);
-    }
 }
 
 /**
@@ -257,22 +240,32 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
             continue;
         }
 
+        // Get the current flags for the listen socket
+        int flags;
+        while ((flags = fcntl(listen_socket_fd, F_GETFL, 0)) == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            perror("server: fcntl()");
+            return -1;
+        }
+
         // Set the listen socket to non-blocking mode
-        int flags = fcntl(listen_socket_fd, F_GETFL, 0);
-        if (flags == -1)
+        while (fcntl(listen_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
         {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             perror("server: fcntl()");
             return -1;
         }
-        if (fcntl(listen_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
-        {
-            perror("server: fcntl()");
-            return -1;
-        }
-        event.events = EPOLLIN;
-        event.data.fd = listen_socket_fd;
 
         // Add the listen socket to the epoll instance
+        event.events = EPOLLIN;
+        event.data.fd = listen_socket_fd;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_socket_fd, &event) == -1)
         {
             perror("server: epoll_ctl()");
@@ -305,7 +298,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
 
     if ((conn_socket_fd = accept(listen_socket_fd, (struct sockaddr *)&client_addr, &addr_len)) == -1)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
         {
             return 0;
         }
@@ -316,16 +309,26 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
         }
     }
 
-    // Set the connection socket to non-blocking mode
-    int flags = fcntl(conn_socket_fd, F_GETFL, 0);
-    if (flags == -1)
+    // Get the current flags for the connection socket
+    int flags;
+    while ((flags = fcntl(conn_socket_fd, F_GETFL, 0)) == -1)
     {
+        if (errno == EINTR)
+        {
+            continue;
+        }
         perror("server: fcntl(conn_sock)");
         close(conn_socket_fd);
         return -1;
     }
-    if (fcntl(conn_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
+
+    // Set the connection socket to non-blocking mode
+    while (fcntl(conn_socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
     {
+        if (errno == EINTR)
+        {
+            continue;
+        }
         perror("server: fcntl(conn_sock)");
         close(conn_socket_fd);
         return -1;
@@ -406,15 +409,12 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
         }
         else
         {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
             {
                 return 1;
             }
-            else
-            {
-                perror("server: recv()");
-                return -1;
-            }
+            perror("server: recv()");
+            return -1;
         }
     }
 
@@ -422,15 +422,19 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     if (event.events & EPOLLOUT)
     {
         ssize_t sent_bytes;
-        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), 0)) == -1)
-        {
-            perror("server: send()");
-            return -1;
-        }
-        else
+        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), 0)) >= 0)
         {
             memmove(client_socket_data->buffer, client_socket_data->buffer + sent_bytes, strlen(client_socket_data->buffer) - sent_bytes);
             client_socket_data->buffer[strlen(client_socket_data->buffer) - sent_bytes] = '\0';
+        }
+        else
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+            {
+                return 1;
+            }
+            perror("server: send()");
+            return -1;
         }
     }
 

@@ -56,6 +56,10 @@ int main(int argc, char **argv)
             ssize_t sent_bytes = send(socket_fd, buf + total_sent, bytes_read - total_sent, 0);
             if (sent_bytes == -1)
             {
+                if (errno == EINTR)
+                {
+                    continue;
+                }
                 perror("client: send()");
                 close(socket_fd);
                 exit(1);
@@ -70,6 +74,10 @@ int main(int argc, char **argv)
             ssize_t received_bytes = recv(socket_fd, buf + total_received, bytes_read - total_received, 0);
             if (received_bytes == -1)
             {
+                if (errno == EINTR)
+                {
+                    continue;
+                }
                 perror("client: recv()");
                 close(socket_fd);
                 exit(1);
@@ -84,7 +92,12 @@ int main(int argc, char **argv)
         }
 
         // Print the received data
-        fwrite(buf, 1, total_received, stdout);
+        if (fwrite(buf, 1, total_received, stdout) != total_received)
+        {
+            perror("client: fwrite()");
+            close(socket_fd);
+            exit(1);
+        }
     }
 
     close(socket_fd);
@@ -139,8 +152,12 @@ int create_connected_socket(const char *ip, const char *port_str)
         server_addr4.sin_family = PF_INET;
         server_addr4.sin_port = htons(port);
 
-        if (connect(socket_fd, (struct sockaddr *)&server_addr4, sizeof(server_addr4)) == -1)
+        while (connect(socket_fd, (struct sockaddr *)&server_addr4, sizeof(server_addr4)) == -1)
         {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             perror("client: connect() using IPv4");
             close(socket_fd);
             return -1;
@@ -157,8 +174,12 @@ int create_connected_socket(const char *ip, const char *port_str)
         server_addr6.sin6_family = PF_INET6;
         server_addr6.sin6_port = htons(port);
 
-        if (connect(socket_fd, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
+        while (connect(socket_fd, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
         {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             perror("client: connect() using IPv6");
             close(socket_fd);
             return -1;
