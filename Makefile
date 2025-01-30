@@ -1,15 +1,18 @@
-.PHONY: build-server
-build-server:
-	gcc -Wall -Wextra -Wpedantic server.c -o server
+CC = gcc
+CFLAGS = -Wall -Wextra -Wpedantic -O2
 
-.PHONY: run-server
-run-server: build-server
-	./server
+.PHONY: all clean
 
-.PHONY: build-client
-build-client:
-	gcc -Wall -Wextra -Wpedantic client.c -o client
+all: server client
 
-.PHONY: run-client
-run-client:build-client
-	./client
+server: server.o utils.o
+	$(CC) $(CFLAGS) -o server server.o utils.o
+
+client: client.o utils.o
+	$(CC) $(CFLAGS) -o client client.o utils.o
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $<
+
+clean:
+	rm -f server client *.o
