@@ -550,7 +550,8 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     if (event.events & EPOLLOUT)
     {
         ssize_t sent_bytes;
-        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), 0)) >= 0)
+        // Set MSG_NOSIGNAL to prevent the server from crashing when the client disconnects
+        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), MSG_NOSIGNAL)) >= 0)
         {
             memmove(client_socket_data->buffer, client_socket_data->buffer + sent_bytes, strlen(client_socket_data->buffer) - sent_bytes);
             client_socket_data->buffer[strlen(client_socket_data->buffer) - sent_bytes] = '\0';
