@@ -25,7 +25,7 @@ int main(int argc, char **argv)
     int socket_fd;
     if ((socket_fd = create_connected_socket(argv[1], argv[2])) == -1)
     {
-        puts("Failed to create a connected socket\n");
+        fputs("Failed to create a connected socket\n", stderr);
         exit(1);
     }
 
@@ -37,7 +37,7 @@ int main(int argc, char **argv)
             // Check if fgets() reached EOF
             if (feof(stdin))
             {
-                puts("EOF detected\n");
+                puts("EOF detected");
                 break;
             }
             else
@@ -84,7 +84,7 @@ int main(int argc, char **argv)
             }
             else if (received_bytes == 0)
             {
-                puts("Connection closed by server\n");
+                puts("Connection closed by server");
                 close_with_retry(socket_fd);
                 exit(1);
             }
@@ -187,7 +187,7 @@ int create_connected_socket(const char *ip, const char *port_str)
     }
     else
     {
-        puts("Reached the unreachable");
+        fputs("Reached the unreachable\n", stderr);
         return -1;
     }
 

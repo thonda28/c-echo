@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     init_socket_manager(&listen_socket_manager, MAX_LISTENS);
     if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
     {
-        puts("Failed to create listen sockets\n");
+        fputs("Failed to create listen sockets\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     // Add the listen sockets to the epoll instance
     if (add_listen_sockets_to_epoll(epoll_fd, &listen_socket_manager) == -1)
     {
-        puts("Failed to add listen sockets to epoll\n");
+        fputs("Failed to add listen sockets to epoll\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
     // Add the pipe to the epoll instance
     if (add_pipe_to_epoll(epoll_fd) == -1)
     {
-        puts("Failed to add pipe to epoll\n");
+        fputs("Failed to add pipe to epoll\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -255,7 +255,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 
     if (listen_socket_manager->top == listen_socket_manager->max_size - 1)
     {
-        puts("server: failed to bind any sockets\n");
+        fputs("server: failed to bind any sockets\n", stderr);
         return -1;
     }
 
@@ -440,7 +440,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     // Fulfilled the maximum number of clients
     if (add_socket(client_socket_manager, conn_socket_fd) == -1)
     {
-        puts("No more room for clients\n");
+        puts("No more room for clients");
         close_with_retry(conn_socket_fd);
         return 0;
     }
@@ -507,7 +507,7 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
         }
         else if (received_bytes == 0)
         {
-            puts("Connection closed\n");
+            puts("Connection closed");
             return 0;
         }
         else
