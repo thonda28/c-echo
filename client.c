@@ -11,6 +11,7 @@
 #define BUFFER_SIZE 256
 
 int create_connected_socket(const char *ip, const char *port);
+int connect_to_server(int protocol_family, struct sockaddr *server_addr, socklen_t server_addr_len, int port);
 
 int main(int argc, char **argv)
 {
@@ -143,47 +144,11 @@ int create_connected_socket(const char *ip, const char *port_str)
     int socket_fd;
     if (ipv4_result == 1)
     {
-        if ((socket_fd = socket(PF_INET, SOCK_STREAM, 0)) == -1)
-        {
-            perror("client: socket()");
-            return -1;
-        }
-
-        server_addr4.sin_family = PF_INET;
-        server_addr4.sin_port = htons(port);
-
-        while (connect(socket_fd, (struct sockaddr *)&server_addr4, sizeof(server_addr4)) == -1)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            perror("client: connect() using IPv4");
-            close_with_retry(socket_fd);
-            return -1;
-        }
+        socket_fd = connect_to_server(PF_INET, (struct sockaddr *)&server_addr4, sizeof(server_addr4), port);
     }
     else if (ipv6_result == 1)
     {
-        if ((socket_fd = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
-        {
-            perror("client: socket() using IPv6");
-            return -1;
-        }
-
-        server_addr6.sin6_family = PF_INET6;
-        server_addr6.sin6_port = htons(port);
-
-        while (connect(socket_fd, (struct sockaddr *)&server_addr6, sizeof(server_addr6)) == -1)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            perror("client: connect() using IPv6");
-            close_with_retry(socket_fd);
-            return -1;
-        }
+        socket_fd = connect_to_server(PF_INET6, (struct sockaddr *)&server_addr6, sizeof(server_addr6), port);
     }
     else
     {
@@ -192,5 +157,41 @@ int create_connected_socket(const char *ip, const char *port_str)
     }
 
     printf("Connected to %s, %d\n", ip, port);
+    return socket_fd;
+}
+
+int connect_to_server(int protocol_family, struct sockaddr *server_addr, socklen_t server_addr_len, int port)
+{
+    int socket_fd;
+    if ((socket_fd = socket(protocol_family, SOCK_STREAM, 0)) == -1)
+    {
+        perror("client: socket()");
+        return -1;
+    }
+
+    if (protocol_family == PF_INET)
+    {
+        struct sockaddr_in *server_addr4 = (struct sockaddr_in *)server_addr;
+        server_addr4->sin_family = PF_INET;
+        server_addr4->sin_port = htons(port);
+    }
+    else if (protocol_family == PF_INET6)
+    {
+        struct sockaddr_in6 *server_addr6 = (struct sockaddr_in6 *)server_addr;
+        server_addr6->sin6_family = PF_INET6;
+        server_addr6->sin6_port = htons(port);
+    }
+
+    while (connect(socket_fd, server_addr, server_addr_len) == -1)
+    {
+        if (errno == EINTR)
+        {
+            continue;
+        }
+        perror("client: connect()");
+        close_with_retry(socket_fd);
+        return -1;
+    }
+
     return socket_fd;
 }
