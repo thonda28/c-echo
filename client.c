@@ -123,9 +123,9 @@ int create_connected_socket(const char *ip, const char *port_str)
     struct sockaddr_in6 server_addr6;
     memset(&server_addr4, 0, sizeof(server_addr4));
     memset(&server_addr6, 0, sizeof(server_addr6));
-    int is_ipv4 = inet_pton(PF_INET, ip, &server_addr4.sin_addr);
-    int is_ipv6 = inet_pton(PF_INET6, ip, &server_addr6.sin6_addr);
-    if (is_ipv4 <= 0 && is_ipv6 <= 0)
+    int ipv4_result = inet_pton(PF_INET, ip, &server_addr4.sin_addr);
+    int ipv6_result = inet_pton(PF_INET6, ip, &server_addr6.sin6_addr);
+    if (ipv4_result <= 0 && ipv6_result <= 0)
     {
         printf("Invalid IP address: %s\n", ip);
         return -1;
@@ -141,7 +141,7 @@ int create_connected_socket(const char *ip, const char *port_str)
 
     // Create a socket and connect to the server
     int socket_fd;
-    if (is_ipv4 == 1)
+    if (ipv4_result == 1)
     {
         if ((socket_fd = socket(PF_INET, SOCK_STREAM, 0)) == -1)
         {
@@ -163,7 +163,7 @@ int create_connected_socket(const char *ip, const char *port_str)
             return -1;
         }
     }
-    else if (is_ipv6 == 1)
+    else if (ipv6_result == 1)
     {
         if ((socket_fd = socket(PF_INET6, SOCK_STREAM, 0)) == -1)
         {
