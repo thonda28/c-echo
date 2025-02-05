@@ -34,15 +34,15 @@ SocketData *find_socket(SocketManager *manager, int socket_fd)
     return NULL;
 }
 
-int add_socket(SocketManager *manager, int socket_fd)
+SocketData *add_socket(SocketManager *manager, int socket_fd)
 {
     if (manager->top < 0)
     {
-        return -1;
+        return NULL;
     }
     int index = manager->free_indices[manager->top--];
     manager->sockets[index].socket_fd = socket_fd;
-    return index;
+    return &manager->sockets[index];
 }
 
 int remove_socket(SocketManager *manager, int socket_fd)

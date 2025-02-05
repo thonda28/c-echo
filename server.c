@@ -438,7 +438,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     }
 
     // Fulfilled the maximum number of clients
-    if (add_socket(client_socket_manager, conn_socket_fd) == -1)
+    if (add_socket(client_socket_manager, conn_socket_fd) == NULL)
     {
         puts("No more room for clients");
         close_with_retry(conn_socket_fd);

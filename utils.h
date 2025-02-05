@@ -21,7 +21,7 @@ typedef struct
 
 SocketManager *new_socket_manager(int max_size);
 SocketData *find_socket(SocketManager *manager, int socket_fd);
-int add_socket(SocketManager *manager, int socket_fd);
+SocketData *add_socket(SocketManager *manager, int socket_fd);
 int remove_socket(SocketManager *manager, int socket_fd);
 void free_socket_manager(SocketManager *manager);
 
