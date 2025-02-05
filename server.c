@@ -170,11 +170,7 @@ cleanup:
     close_with_retry(pipe_fds[0]);
     close_with_retry(pipe_fds[1]);
 
-    if (exit_code != 0)
-    {
-        exit(exit_code);
-    }
-    return 0;
+    return exit_code;
 }
 
 /**
@@ -245,7 +241,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
         {
             perror("server: listen()");
             close_with_retry(listen_socket_fd);
-            return -1;
+            continue;
         }
 
         add_socket(listen_socket_manager, listen_socket_fd);
