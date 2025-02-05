@@ -6,10 +6,10 @@ CFLAGS = -Wall -Wextra -Wpedantic -O2
 all: server client
 
 server: server.o utils.o
-	$(CC) $(CFLAGS) -o server server.o utils.o
+	$(CC) $(CFLAGS) -o $@ $^
 
 client: client.o utils.o
-	$(CC) $(CFLAGS) -o client client.o utils.o
+	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
