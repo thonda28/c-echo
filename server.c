@@ -32,8 +32,8 @@ int main(int argc, char **argv)
 {
     // Declare variables that need to be cleaned up later
     int epoll_fd = -1;
-    SocketManager listen_socket_manager;
-    SocketManager client_socket_manager;
+    SocketManager *listen_socket_manager = NULL;
+    SocketManager *client_socket_manager = NULL;
     int exit_code = 0;
 
     // Check if the port number is provided
@@ -53,8 +53,8 @@ int main(int argc, char **argv)
     }
 
     // Create listen sockets
-    init_socket_manager(&listen_socket_manager, MAX_LISTENS);
-    if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
+    listen_socket_manager = new_socket_manager(MAX_LISTENS);
+    if (create_listen_sockets(argv[1], listen_socket_manager) == -1)
     {
         fputs("Failed to create listen sockets\n", stderr);
         exit_code = 1;
@@ -72,7 +72,7 @@ int main(int argc, char **argv)
     }
 
     // Add the listen sockets to the epoll instance
-    if (add_listen_sockets_to_epoll(epoll_fd, &listen_socket_manager) == -1)
+    if (add_listen_sockets_to_epoll(epoll_fd, listen_socket_manager) == -1)
     {
         fputs("Failed to add listen sockets to epoll\n", stderr);
         exit_code = 1;
@@ -98,7 +98,7 @@ int main(int argc, char **argv)
     puts("Monitoring for events...");
 
     struct epoll_event events[MAX_EVENTS];
-    init_socket_manager(&client_socket_manager, MAX_CLIENTS);
+    client_socket_manager = new_socket_manager(MAX_CLIENTS);
     while (1)
     {
         // Wait for events indefinitely
@@ -118,22 +118,22 @@ int main(int argc, char **argv)
         {
             SocketData *socket_data;
             // Check if the event is for the listen socket
-            if ((socket_data = find_socket(&listen_socket_manager, events[i].data.fd)) != NULL)
+            if ((socket_data = find_socket(listen_socket_manager, events[i].data.fd)) != NULL)
             {
-                if ((handle_new_connection(socket_data->socket_fd, epoll_fd, &client_socket_manager)) == -1)
+                if ((handle_new_connection(socket_data->socket_fd, epoll_fd, client_socket_manager)) == -1)
                 {
                     exit_code = 1;
                     goto cleanup;
                 }
             }
             // Check if the event is for a client socket
-            else if ((socket_data = find_socket(&client_socket_manager, events[i].data.fd)) != NULL)
+            else if ((socket_data = find_socket(client_socket_manager, events[i].data.fd)) != NULL)
             {
                 if (handle_client(socket_data, events[i]) <= 0)
                 {
                     // The server itself does not exit even if the processing with the client ends abnormally.
                     close_with_retry(socket_data->socket_fd);
-                    remove_socket(&client_socket_manager, socket_data->socket_fd);
+                    remove_socket(client_socket_manager, socket_data->socket_fd);
                 }
             }
             // Check if the event is for the pipe
@@ -165,8 +165,8 @@ cleanup:
     {
         close_with_retry(epoll_fd);
     }
-    close_all_sockets(&client_socket_manager);
-    close_all_sockets(&listen_socket_manager);
+    close_all_sockets(client_socket_manager);
+    close_all_sockets(listen_socket_manager);
     close_with_retry(pipe_fds[0]);
     close_with_retry(pipe_fds[1]);
 

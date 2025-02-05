@@ -6,8 +6,9 @@
 
 #include "utils.h"
 
-void init_socket_manager(SocketManager *manager, int max_size)
+SocketManager *new_socket_manager(int max_size)
 {
+    SocketManager *manager = (SocketManager *)malloc(sizeof(SocketManager));
     manager->sockets = (SocketData *)malloc(max_size * sizeof(SocketData));
     manager->free_indices = (int *)malloc(max_size * sizeof(int));
     manager->max_size = max_size;
@@ -18,6 +19,7 @@ void init_socket_manager(SocketManager *manager, int max_size)
         manager->sockets[i].socket_fd = -1;
         manager->free_indices[i] = i;
     }
+    return manager;
 }
 
 SocketData *find_socket(SocketManager *manager, int socket_fd)

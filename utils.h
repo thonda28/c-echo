@@ -19,7 +19,7 @@ typedef struct
     int top;
 } SocketManager;
 
-void init_socket_manager(SocketManager *manager, int max_size);
+SocketManager *new_socket_manager(int max_size);
 SocketData *find_socket(SocketManager *manager, int socket_fd);
 int add_socket(SocketManager *manager, int socket_fd);
 int remove_socket(SocketManager *manager, int socket_fd);
