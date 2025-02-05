@@ -59,7 +59,7 @@ int remove_socket(SocketManager *manager, int socket_fd)
     return -1;
 }
 
-int close_all_sockets(SocketManager *manager)
+void free_socket_manager(SocketManager *manager)
 {
     for (int i = 0; i < manager->max_size; i++)
     {
@@ -70,7 +70,6 @@ int close_all_sockets(SocketManager *manager)
     }
     free(manager->sockets);
     free(manager->free_indices);
-    return 0;
 }
 
 int parse_port(const char *port_str)

@@ -165,8 +165,8 @@ cleanup:
     {
         close_with_retry(epoll_fd);
     }
-    close_all_sockets(client_socket_manager);
-    close_all_sockets(listen_socket_manager);
+    free_socket_manager(client_socket_manager);
+    free_socket_manager(listen_socket_manager);
     close_with_retry(pipe_fds[0]);
     close_with_retry(pipe_fds[1]);
 
