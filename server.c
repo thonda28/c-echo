@@ -25,6 +25,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
 int add_pipe_to_epoll(int epoll_fd);
 int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager);
+int print_client_info(struct sockaddr_storage *client_addr);
 int handle_client(SocketData *client_socket_data, struct epoll_event event);
 void handle_sigint(int sig);
 
@@ -457,10 +458,32 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
         return -1;
     }
 
-    char client_ip[INET6_ADDRSTRLEN];
-    if (client_addr.ss_family == PF_INET)
+    if (print_client_info(&client_addr) == -1)
     {
-        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)&client_addr;
+        perror("server: print_client_info()");
+        close_with_retry(conn_socket_fd);
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Print the client information.
+ *
+ * This function prints the IP address and port number of the client.
+ *
+ * @param[in] client_addr The client address information.
+ * @return The status of the client information printing.
+ * @retval 0 The client information was successfully printed.
+ * @retval -1 An error occurred during the process.
+ */
+int print_client_info(struct sockaddr_storage *client_addr)
+{
+    char client_ip[INET6_ADDRSTRLEN];
+    if (client_addr->ss_family == PF_INET)
+    {
+        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)client_addr;
         if (inet_ntop(PF_INET, &client_addr4->sin_addr, client_ip, sizeof(client_ip)) == NULL)
         {
             perror("server: inet_ntop(PF_INET)");
@@ -468,9 +491,9 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
         }
         printf("Connection from %s, %d\n", client_ip, ntohs(client_addr4->sin_port));
     }
-    else if (client_addr.ss_family == PF_INET6)
+    else if (client_addr->ss_family == PF_INET6)
     {
-        struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)&client_addr;
+        struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)client_addr;
         if (inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip)) == NULL)
         {
             perror("server: inet_ntop(PF_INET6)");
