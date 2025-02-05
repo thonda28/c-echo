@@ -45,6 +45,11 @@ SocketData *add_socket(SocketManager *manager, int socket_fd)
     return &manager->sockets[index];
 }
 
+int get_socket_count(SocketManager *manager)
+{
+    return (manager->max_size - 1) - manager->top;
+}
+
 int remove_socket(SocketManager *manager, int socket_fd)
 {
     for (int i = 0; i < manager->max_size; i++)

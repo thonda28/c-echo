@@ -249,7 +249,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
 
     freeaddrinfo(res0);
 
-    if (listen_socket_manager->top == listen_socket_manager->max_size - 1)
+    if (get_socket_count(listen_socket_manager) == 0)
     {
         fputs("server: failed to bind any sockets\n", stderr);
         return -1;
