@@ -19,7 +19,7 @@
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
 
-int pipe_fds[2];
+int pipe_fds[2] = {-1, -1};
 
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
@@ -161,14 +161,20 @@ int main(int argc, char **argv)
     }
 
 cleanup:
+    if (pipe_fds[0] != -1)
+    {
+        close_with_retry(pipe_fds[0]);
+    }
+    if (pipe_fds[1] != -1)
+    {
+        close_with_retry(pipe_fds[1]);
+    }
     if (epoll_fd != -1)
     {
         close_with_retry(epoll_fd);
     }
     free_socket_manager(client_socket_manager);
     free_socket_manager(listen_socket_manager);
-    close_with_retry(pipe_fds[0]);
-    close_with_retry(pipe_fds[1]);
 
     return exit_code;
 }

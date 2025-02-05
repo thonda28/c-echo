@@ -9,8 +9,27 @@
 SocketManager *new_socket_manager(int max_size)
 {
     SocketManager *manager = (SocketManager *)malloc(sizeof(SocketManager));
+    if (manager == NULL)
+    {
+        perror("malloc(sizeof(SocketManager))");
+        return NULL;
+    }
+
     manager->sockets = (SocketData *)malloc(max_size * sizeof(SocketData));
+    if (manager->sockets == NULL)
+    {
+        perror("malloc(max_size * sizeof(SocketData))");
+        free(manager);
+        return NULL;
+    }
     manager->free_indices = (int *)malloc(max_size * sizeof(int));
+    if (manager->free_indices == NULL)
+    {
+        perror("malloc(max_size * sizeof(int))");
+        free(manager->sockets);
+        free(manager);
+        return NULL;
+    }
     manager->max_size = max_size;
     manager->top = max_size - 1;
 
@@ -24,6 +43,11 @@ SocketManager *new_socket_manager(int max_size)
 
 SocketData *find_socket(SocketManager *manager, int socket_fd)
 {
+    if (manager == NULL)
+    {
+        return NULL;
+    }
+
     for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i].socket_fd == socket_fd)
@@ -36,6 +60,11 @@ SocketData *find_socket(SocketManager *manager, int socket_fd)
 
 SocketData *add_socket(SocketManager *manager, int socket_fd)
 {
+    if (manager == NULL)
+    {
+        return NULL;
+    }
+
     if (manager->top < 0)
     {
         return NULL;
@@ -47,11 +76,20 @@ SocketData *add_socket(SocketManager *manager, int socket_fd)
 
 int get_socket_count(SocketManager *manager)
 {
+    if (manager == NULL)
+    {
+        return -1;
+    }
     return (manager->max_size - 1) - manager->top;
 }
 
 int remove_socket(SocketManager *manager, int socket_fd)
 {
+    if (manager == NULL)
+    {
+        return -1;
+    }
+
     for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i].socket_fd == socket_fd)
@@ -66,6 +104,11 @@ int remove_socket(SocketManager *manager, int socket_fd)
 
 void free_socket_manager(SocketManager *manager)
 {
+    if (manager == NULL)
+    {
+        return;
+    }
+
     for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i].socket_fd != -1)
@@ -75,6 +118,7 @@ void free_socket_manager(SocketManager *manager)
     }
     free(manager->sockets);
     free(manager->free_indices);
+    free(manager);
 }
 
 int parse_port(const char *port_str)
