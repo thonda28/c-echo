@@ -41,24 +41,6 @@ SocketManager *new_socket_manager(int max_size)
     return manager;
 }
 
-// NO USE
-SocketData *find_socket(SocketManager *manager, int socket_fd)
-{
-    if (manager == NULL)
-    {
-        return NULL;
-    }
-
-    for (int i = 0; i < manager->max_size; i++)
-    {
-        if (manager->sockets[i].socket_fd == socket_fd)
-        {
-            return &manager->sockets[i];
-        }
-    }
-    return NULL;
-}
-
 SocketData *add_socket(SocketManager *manager, SocketType type, int socket_fd)
 {
     if (manager == NULL)
