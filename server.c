@@ -117,9 +117,9 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < nfds; i++)
         {
-            SocketData *socket_data;
+            SocketData *socket_data = events[i].data.ptr;
             // Check if the event is for the listen socket
-            if ((socket_data = find_socket(listen_socket_manager, events[i].data.fd)) != NULL)
+            if (socket_data->type == LISTEN_SOCKET)
             {
                 if ((handle_new_connection(socket_data->socket_fd, epoll_fd, client_socket_manager)) == -1)
                 {
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
                 }
             }
             // Check if the event is for a client socket
-            else if ((socket_data = find_socket(client_socket_manager, events[i].data.fd)) != NULL)
+            else if (socket_data->type == CLIENT_SOCKET)
             {
                 if (handle_client(socket_data, events[i]) <= 0)
                 {
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
                 }
             }
             // Check if the event is for the pipe
-            else if (events[i].data.fd == pipe_fds[0])
+            else if (socket_data->type == SIGNAL_PIPE)
             {
                 int sig;
                 while (read(pipe_fds[0], &sig, sizeof(sig)) == -1)
@@ -251,7 +251,7 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
             continue;
         }
 
-        add_socket(listen_socket_manager, listen_socket_fd);
+        add_socket(listen_socket_manager, LISTEN_SOCKET, listen_socket_fd);
     }
 
     freeaddrinfo(res0);
@@ -313,6 +313,7 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
         // Add the listen socket to the epoll instance
         event.events = EPOLLIN;
         event.data.fd = listen_socket_fd;
+        event.data.ptr = &listen_socket_manager->sockets[i];
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_socket_fd, &event) == -1)
         {
             perror("server: epoll_ctl()");
@@ -373,6 +374,9 @@ int add_pipe_to_epoll(int epoll_fd)
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = pipe_fds[0];
+    SocketData *pipe_data = (SocketData *)malloc(sizeof(SocketData));
+    pipe_data->type = SIGNAL_PIPE;
+    event.data.ptr = pipe_data;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fds[0], &event) == -1)
     {
         perror("server: epoll_ctl()");
@@ -441,7 +445,8 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     }
 
     // Fulfilled the maximum number of clients
-    if (add_socket(client_socket_manager, conn_socket_fd) == NULL)
+    SocketData *conn_socket_data = NULL;
+    if ((conn_socket_data = add_socket(client_socket_manager, CLIENT_SOCKET, conn_socket_fd)) == NULL)
     {
         puts("No more room for clients");
         close_with_retry(conn_socket_fd);
@@ -451,6 +456,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     struct epoll_event event;
     event.events = EPOLLIN | EPOLLOUT;
     event.data.fd = conn_socket_fd;
+    event.data.ptr = conn_socket_data;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_socket_fd, &event) == -1)
     {
         perror("server: epoll_ctl()");

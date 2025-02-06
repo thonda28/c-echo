@@ -41,6 +41,7 @@ SocketManager *new_socket_manager(int max_size)
     return manager;
 }
 
+// NO USE
 SocketData *find_socket(SocketManager *manager, int socket_fd)
 {
     if (manager == NULL)
@@ -58,7 +59,7 @@ SocketData *find_socket(SocketManager *manager, int socket_fd)
     return NULL;
 }
 
-SocketData *add_socket(SocketManager *manager, int socket_fd)
+SocketData *add_socket(SocketManager *manager, SocketType type, int socket_fd)
 {
     if (manager == NULL)
     {
@@ -70,6 +71,7 @@ SocketData *add_socket(SocketManager *manager, int socket_fd)
         return NULL;
     }
     int index = manager->free_indices[manager->top--];
+    manager->sockets[index].type = type;
     manager->sockets[index].socket_fd = socket_fd;
     return &manager->sockets[index];
 }
