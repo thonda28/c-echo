@@ -6,10 +6,30 @@
 
 #include "utils.h"
 
-void init_socket_manager(SocketManager *manager, int max_size)
+SocketManager *new_socket_manager(int max_size)
 {
+    SocketManager *manager = (SocketManager *)malloc(sizeof(SocketManager));
+    if (manager == NULL)
+    {
+        perror("malloc(sizeof(SocketManager))");
+        return NULL;
+    }
+
     manager->sockets = (SocketData *)malloc(max_size * sizeof(SocketData));
+    if (manager->sockets == NULL)
+    {
+        perror("malloc(max_size * sizeof(SocketData))");
+        free(manager);
+        return NULL;
+    }
     manager->free_indices = (int *)malloc(max_size * sizeof(int));
+    if (manager->free_indices == NULL)
+    {
+        perror("malloc(max_size * sizeof(int))");
+        free(manager->sockets);
+        free(manager);
+        return NULL;
+    }
     manager->max_size = max_size;
     manager->top = max_size - 1;
 
@@ -18,33 +38,44 @@ void init_socket_manager(SocketManager *manager, int max_size)
         manager->sockets[i].socket_fd = -1;
         manager->free_indices[i] = i;
     }
+    return manager;
 }
 
-SocketData *find_socket(SocketManager *manager, int socket_fd)
+SocketData *add_socket(SocketManager *manager, SocketType type, int socket_fd)
 {
-    for (int i = 0; i < manager->max_size; i++)
+    if (manager == NULL)
     {
-        if (manager->sockets[i].socket_fd == socket_fd)
-        {
-            return &manager->sockets[i];
-        }
+        return NULL;
     }
-    return NULL;
+
+    if (manager->top < 0)
+    {
+        return NULL;
+    }
+    int index = manager->free_indices[manager->top--];
+    manager->sockets[index].type = type;
+    manager->sockets[index].socket_fd = socket_fd;
+    manager->sockets[index].buffer_start = 0;
+    manager->sockets[index].buffer_end = 0;
+    return &manager->sockets[index];
 }
 
-int add_socket(SocketManager *manager, int socket_fd)
+int get_socket_count(SocketManager *manager)
 {
-    if (manager->top < 0)
+    if (manager == NULL)
     {
         return -1;
     }
-    int index = manager->free_indices[manager->top--];
-    manager->sockets[index].socket_fd = socket_fd;
-    return index;
+    return (manager->max_size - 1) - manager->top;
 }
 
 int remove_socket(SocketManager *manager, int socket_fd)
 {
+    if (manager == NULL)
+    {
+        return -1;
+    }
+
     for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i].socket_fd == socket_fd)
@@ -57,8 +88,13 @@ int remove_socket(SocketManager *manager, int socket_fd)
     return -1;
 }
 
-int close_all_sockets(SocketManager *manager)
+void free_socket_manager(SocketManager *manager)
 {
+    if (manager == NULL)
+    {
+        return;
+    }
+
     for (int i = 0; i < manager->max_size; i++)
     {
         if (manager->sockets[i].socket_fd != -1)
@@ -68,7 +104,7 @@ int close_all_sockets(SocketManager *manager)
     }
     free(manager->sockets);
     free(manager->free_indices);
-    return 0;
+    free(manager);
 }
 
 int parse_port(const char *port_str)

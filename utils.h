@@ -5,10 +5,20 @@
 
 #define BUFFER_SIZE 256
 
+typedef enum
+{
+    LISTEN_SOCKET,
+    CLIENT_SOCKET,
+    SIGNAL_PIPE,
+} SocketType;
+
 typedef struct
 {
+    SocketType type;
     int socket_fd;
     char buffer[BUFFER_SIZE]; // TODO: Use dynamic memory allocation for the buffer
+    size_t buffer_start;
+    size_t buffer_end;
 } SocketData;
 
 typedef struct
@@ -19,11 +29,11 @@ typedef struct
     int top;
 } SocketManager;
 
-void init_socket_manager(SocketManager *manager, int max_size);
-SocketData *find_socket(SocketManager *manager, int socket_fd);
-int add_socket(SocketManager *manager, int socket_fd);
+SocketManager *new_socket_manager(int max_size);
+SocketData *add_socket(SocketManager *manager, SocketType type, int socket_fd);
+int get_socket_count(SocketManager *manager);
 int remove_socket(SocketManager *manager, int socket_fd);
-int close_all_sockets(SocketManager *manager);
+void free_socket_manager(SocketManager *manager);
 
 int parse_port(const char *port_str);
 int close_with_retry(int fd);

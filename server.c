@@ -10,6 +10,7 @@
 #include <sys/epoll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "utils.h"
@@ -18,13 +19,17 @@
 #define MAX_LISTENS 20
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
+#define EPOLL_TIMEOUT_MILLISECONDS 1000
+#define SHUTDOWN_TIMEOUT_SECONDS 10
 
-int pipe_fds[2];
+int pipe_fds[2] = {-1, -1};
+volatile sig_atomic_t sigint_received = 0;
 
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
 int add_pipe_to_epoll(int epoll_fd);
 int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *client_socket_manager);
+int print_client_info(struct sockaddr_storage *client_addr);
 int handle_client(SocketData *client_socket_data, struct epoll_event event);
 void handle_sigint(int sig);
 
@@ -32,9 +37,10 @@ int main(int argc, char **argv)
 {
     // Declare variables that need to be cleaned up later
     int epoll_fd = -1;
-    SocketManager listen_socket_manager;
-    SocketManager client_socket_manager;
+    SocketManager *listen_socket_manager = NULL;
+    SocketManager *client_socket_manager = NULL;
     int exit_code = 0;
+    time_t shutdown_start_time = 0;
 
     // Check if the port number is provided
     if (argc != 2)
@@ -53,10 +59,10 @@ int main(int argc, char **argv)
     }
 
     // Create listen sockets
-    init_socket_manager(&listen_socket_manager, MAX_LISTENS);
-    if (create_listen_sockets(argv[1], &listen_socket_manager) == -1)
+    listen_socket_manager = new_socket_manager(MAX_LISTENS);
+    if (create_listen_sockets(argv[1], listen_socket_manager) == -1)
     {
-        puts("Failed to create listen sockets\n");
+        fputs("Failed to create listen sockets\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -72,9 +78,9 @@ int main(int argc, char **argv)
     }
 
     // Add the listen sockets to the epoll instance
-    if (add_listen_sockets_to_epoll(epoll_fd, &listen_socket_manager) == -1)
+    if (add_listen_sockets_to_epoll(epoll_fd, listen_socket_manager) == -1)
     {
-        puts("Failed to add listen sockets to epoll\n");
+        fputs("Failed to add listen sockets to epoll\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -90,7 +96,7 @@ int main(int argc, char **argv)
     // Add the pipe to the epoll instance
     if (add_pipe_to_epoll(epoll_fd) == -1)
     {
-        puts("Failed to add pipe to epoll\n");
+        fputs("Failed to add pipe to epoll\n", stderr);
         exit_code = 1;
         goto cleanup;
     }
@@ -98,11 +104,11 @@ int main(int argc, char **argv)
     puts("Monitoring for events...");
 
     struct epoll_event events[MAX_EVENTS];
-    init_socket_manager(&client_socket_manager, MAX_CLIENTS);
+    client_socket_manager = new_socket_manager(MAX_CLIENTS);
     while (1)
     {
         // Wait for events indefinitely
-        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, EPOLL_TIMEOUT_MILLISECONDS);
         if (nfds == -1)
         {
             if (errno == EINTR)
@@ -116,28 +122,28 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < nfds; i++)
         {
-            SocketData *socket_data;
+            SocketData *socket_data = events[i].data.ptr;
             // Check if the event is for the listen socket
-            if ((socket_data = find_socket(&listen_socket_manager, events[i].data.fd)) != NULL)
+            if (socket_data->type == LISTEN_SOCKET)
             {
-                if ((handle_new_connection(socket_data->socket_fd, epoll_fd, &client_socket_manager)) == -1)
+                if ((handle_new_connection(socket_data->socket_fd, epoll_fd, client_socket_manager)) == -1)
                 {
                     exit_code = 1;
                     goto cleanup;
                 }
             }
             // Check if the event is for a client socket
-            else if ((socket_data = find_socket(&client_socket_manager, events[i].data.fd)) != NULL)
+            else if (socket_data->type == CLIENT_SOCKET)
             {
                 if (handle_client(socket_data, events[i]) <= 0)
                 {
                     // The server itself does not exit even if the processing with the client ends abnormally.
                     close_with_retry(socket_data->socket_fd);
-                    remove_socket(&client_socket_manager, socket_data->socket_fd);
+                    remove_socket(client_socket_manager, socket_data->socket_fd);
                 }
             }
             // Check if the event is for the pipe
-            else if (events[i].data.fd == pipe_fds[0])
+            else if (socket_data->type == SIGNAL_PIPE)
             {
                 int sig;
                 while (read(pipe_fds[0], &sig, sizeof(sig)) == -1)
@@ -153,28 +159,66 @@ int main(int argc, char **argv)
 
                 if (sig == SIGINT)
                 {
-                    puts("Received SIGINT, exiting...");
-                    goto cleanup;
+                    puts("Received SIGINT, closing all connections...");
+                    free_socket_manager(client_socket_manager);
+                    client_socket_manager = NULL;
+                    free_socket_manager(listen_socket_manager);
+                    listen_socket_manager = NULL;
+
+                    shutdown_start_time = time(NULL);
+                    if (shutdown_start_time == -1)
+                    {
+                        perror("server: time()");
+                        exit_code = 1;
+                        goto cleanup;
+                    }
                 }
+            }
+        }
+
+        // Check if SIGINT was received and all connections are closed
+        if (sigint_received == 1 && listen_socket_manager == NULL && client_socket_manager == NULL)
+        {
+            puts("All connections closed, exiting...");
+            break;
+        }
+
+        // Check if shutdown timeout has elapsed
+        if (shutdown_start_time != 0)
+        {
+            time_t current_time = time(NULL);
+            if (current_time == -1)
+            {
+                perror("server: time()");
+                exit_code = 1;
+                goto cleanup;
+            }
+
+            if (current_time - shutdown_start_time >= SHUTDOWN_TIMEOUT_SECONDS)
+            {
+                puts("Shutdown timeout elapsed, exiting...");
+                break;
             }
         }
     }
 
 cleanup:
+    if (pipe_fds[0] != -1)
+    {
+        close_with_retry(pipe_fds[0]);
+    }
+    if (pipe_fds[1] != -1)
+    {
+        close_with_retry(pipe_fds[1]);
+    }
     if (epoll_fd != -1)
     {
         close_with_retry(epoll_fd);
     }
-    close_all_sockets(&client_socket_manager);
-    close_all_sockets(&listen_socket_manager);
-    close_with_retry(pipe_fds[0]);
-    close_with_retry(pipe_fds[1]);
+    free_socket_manager(client_socket_manager);
+    free_socket_manager(listen_socket_manager);
 
-    if (exit_code != 0)
-    {
-        exit(exit_code);
-    }
-    return 0;
+    return exit_code;
 }
 
 /**
@@ -245,17 +289,17 @@ int create_listen_sockets(const char *port_str, SocketManager *listen_socket_man
         {
             perror("server: listen()");
             close_with_retry(listen_socket_fd);
-            return -1;
+            continue;
         }
 
-        add_socket(listen_socket_manager, listen_socket_fd);
+        add_socket(listen_socket_manager, LISTEN_SOCKET, listen_socket_fd);
     }
 
     freeaddrinfo(res0);
 
-    if (listen_socket_manager->top == listen_socket_manager->max_size - 1)
+    if (get_socket_count(listen_socket_manager) == 0)
     {
-        puts("server: failed to bind any sockets\n");
+        fputs("server: failed to bind any sockets\n", stderr);
         return -1;
     }
 
@@ -310,6 +354,7 @@ int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manag
         // Add the listen socket to the epoll instance
         event.events = EPOLLIN;
         event.data.fd = listen_socket_fd;
+        event.data.ptr = &listen_socket_manager->sockets[i];
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, listen_socket_fd, &event) == -1)
         {
             perror("server: epoll_ctl()");
@@ -370,6 +415,9 @@ int add_pipe_to_epoll(int epoll_fd)
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = pipe_fds[0];
+    SocketData *pipe_data = (SocketData *)malloc(sizeof(SocketData));
+    pipe_data->type = SIGNAL_PIPE;
+    event.data.ptr = pipe_data;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, pipe_fds[0], &event) == -1)
     {
         perror("server: epoll_ctl()");
@@ -438,9 +486,10 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     }
 
     // Fulfilled the maximum number of clients
-    if (add_socket(client_socket_manager, conn_socket_fd) == -1)
+    SocketData *conn_socket_data = NULL;
+    if ((conn_socket_data = add_socket(client_socket_manager, CLIENT_SOCKET, conn_socket_fd)) == NULL)
     {
-        puts("No more room for clients\n");
+        puts("No more room for clients");
         close_with_retry(conn_socket_fd);
         return 0;
     }
@@ -448,6 +497,7 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
     struct epoll_event event;
     event.events = EPOLLIN | EPOLLOUT;
     event.data.fd = conn_socket_fd;
+    event.data.ptr = conn_socket_data;
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn_socket_fd, &event) == -1)
     {
         perror("server: epoll_ctl()");
@@ -455,10 +505,32 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
         return -1;
     }
 
-    char client_ip[INET6_ADDRSTRLEN];
-    if (client_addr.ss_family == PF_INET)
+    if (print_client_info(&client_addr) == -1)
     {
-        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)&client_addr;
+        perror("server: print_client_info()");
+        close_with_retry(conn_socket_fd);
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Print the client information.
+ *
+ * This function prints the IP address and port number of the client.
+ *
+ * @param[in] client_addr The client address information.
+ * @return The status of the client information printing.
+ * @retval 0 The client information was successfully printed.
+ * @retval -1 An error occurred during the process.
+ */
+int print_client_info(struct sockaddr_storage *client_addr)
+{
+    char client_ip[INET6_ADDRSTRLEN];
+    if (client_addr->ss_family == PF_INET)
+    {
+        struct sockaddr_in *client_addr4 = (struct sockaddr_in *)client_addr;
         if (inet_ntop(PF_INET, &client_addr4->sin_addr, client_ip, sizeof(client_ip)) == NULL)
         {
             perror("server: inet_ntop(PF_INET)");
@@ -466,9 +538,9 @@ int handle_new_connection(int listen_socket_fd, int epoll_fd, SocketManager *cli
         }
         printf("Connection from %s, %d\n", client_ip, ntohs(client_addr4->sin_port));
     }
-    else if (client_addr.ss_family == PF_INET6)
+    else if (client_addr->ss_family == PF_INET6)
     {
-        struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)&client_addr;
+        struct sockaddr_in6 *client_addr6 = (struct sockaddr_in6 *)client_addr;
         if (inet_ntop(PF_INET6, &client_addr6->sin6_addr, client_ip, sizeof(client_ip)) == NULL)
         {
             perror("server: inet_ntop(PF_INET6)");
@@ -499,15 +571,22 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     // Check if the client socket is ready to read
     if (event.events & EPOLLIN)
     {
+        // Check if there is space in the buffer
+        size_t available_size = BUFFER_SIZE - client_socket_data->buffer_end;
+        if (available_size == 0)
+        {
+            return 1;
+        }
+
         ssize_t received_bytes;
-        if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer, BUFFER_SIZE - 1, 0)) > 0)
+        if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer + client_socket_data->buffer_end, available_size, 0)) > 0)
         {
             printf("received_bytes: %ld (fd: %d)\n", received_bytes, client_socket_data->socket_fd);
-            client_socket_data->buffer[received_bytes] = '\0'; // Null-terminate the string
+            client_socket_data->buffer_end += received_bytes;
         }
         else if (received_bytes == 0)
         {
-            puts("Connection closed\n");
+            puts("Connection closed");
             return 0;
         }
         else
@@ -524,11 +603,23 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     // Check if the client socket is ready to write
     if (event.events & EPOLLOUT)
     {
-        ssize_t sent_bytes;
-        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), 0)) >= 0)
+        // Check if there is pending data to send
+        size_t pending_size = client_socket_data->buffer_end - client_socket_data->buffer_start;
+        if (pending_size == 0)
         {
-            memmove(client_socket_data->buffer, client_socket_data->buffer + sent_bytes, strlen(client_socket_data->buffer) - sent_bytes);
-            client_socket_data->buffer[strlen(client_socket_data->buffer) - sent_bytes] = '\0';
+            return 1;
+        }
+
+        ssize_t sent_bytes;
+        // Set MSG_NOSIGNAL to prevent the server from crashing when the client disconnects
+        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer + client_socket_data->buffer_start, pending_size, MSG_NOSIGNAL)) >= 0)
+        {
+            client_socket_data->buffer_start += sent_bytes;
+            if (client_socket_data->buffer_start == client_socket_data->buffer_end)
+            {
+                client_socket_data->buffer_start = 0;
+                client_socket_data->buffer_end = 0;
+            }
         }
         else
         {
@@ -562,4 +653,5 @@ void handle_sigint(int sig)
         perror("server: write()");
         exit(1);
     }
+    sigint_received = 1;
 }
