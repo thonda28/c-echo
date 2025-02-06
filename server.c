@@ -10,6 +10,7 @@
 #include <sys/epoll.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "utils.h"
@@ -18,7 +19,8 @@
 #define MAX_LISTENS 20
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
-#define EPOLL_TIMEOUT_MILLISECONDS 5000
+#define EPOLL_TIMEOUT_MILLISECONDS 1000
+#define SHUTDOWN_TIMEOUT_SECONDS 10
 
 int pipe_fds[2] = {-1, -1};
 volatile sig_atomic_t sigint_received = 0;
@@ -38,6 +40,7 @@ int main(int argc, char **argv)
     SocketManager *listen_socket_manager = NULL;
     SocketManager *client_socket_manager = NULL;
     int exit_code = 0;
+    time_t shutdown_start_time = 0;
 
     // Check if the port number is provided
     if (argc != 2)
@@ -161,6 +164,14 @@ int main(int argc, char **argv)
                     client_socket_manager = NULL;
                     free_socket_manager(listen_socket_manager);
                     listen_socket_manager = NULL;
+
+                    shutdown_start_time = time(NULL);
+                    if (shutdown_start_time == -1)
+                    {
+                        perror("server: time()");
+                        exit_code = 1;
+                        goto cleanup;
+                    }
                 }
             }
         }
@@ -170,6 +181,24 @@ int main(int argc, char **argv)
         {
             puts("All connections closed, exiting...");
             break;
+        }
+
+        // Check if shutdown timeout has elapsed
+        if (shutdown_start_time != 0)
+        {
+            time_t current_time = time(NULL);
+            if (current_time == -1)
+            {
+                perror("server: time()");
+                exit_code = 1;
+                goto cleanup;
+            }
+
+            if (current_time - shutdown_start_time >= SHUTDOWN_TIMEOUT_SECONDS)
+            {
+                puts("Shutdown timeout elapsed, exiting...");
+                break;
+            }
         }
     }
 
