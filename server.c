@@ -18,8 +18,10 @@
 #define MAX_LISTENS 20
 #define MAX_CLIENTS 30
 #define MAX_EVENTS 10
+#define EPOLL_TIMEOUT_MILLISECONDS 5000
 
 int pipe_fds[2] = {-1, -1};
+volatile sig_atomic_t sigint_received = 0;
 
 int create_listen_sockets(const char *port_str, SocketManager *listen_socket_manager);
 int add_listen_sockets_to_epoll(int epoll_fd, SocketManager *listen_socket_manager);
@@ -103,7 +105,7 @@ int main(int argc, char **argv)
     while (1)
     {
         // Wait for events indefinitely
-        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, EPOLL_TIMEOUT_MILLISECONDS);
         if (nfds == -1)
         {
             if (errno == EINTR)
@@ -154,10 +156,20 @@ int main(int argc, char **argv)
 
                 if (sig == SIGINT)
                 {
-                    puts("Received SIGINT, exiting...");
-                    goto cleanup;
+                    puts("Received SIGINT, closing all connections...");
+                    free_socket_manager(client_socket_manager);
+                    client_socket_manager = NULL;
+                    free_socket_manager(listen_socket_manager);
+                    listen_socket_manager = NULL;
                 }
             }
+        }
+
+        // Check if SIGINT was received and all connections are closed
+        if (sigint_received == 1 && listen_socket_manager == NULL && client_socket_manager == NULL)
+        {
+            puts("All connections closed, exiting...");
+            break;
         }
     }
 
@@ -594,4 +606,5 @@ void handle_sigint(int sig)
         perror("server: write()");
         exit(1);
     }
+    sigint_received = 1;
 }
