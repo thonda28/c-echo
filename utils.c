@@ -73,6 +73,8 @@ SocketData *add_socket(SocketManager *manager, SocketType type, int socket_fd)
     int index = manager->free_indices[manager->top--];
     manager->sockets[index].type = type;
     manager->sockets[index].socket_fd = socket_fd;
+    manager->sockets[index].buffer_start = 0;
+    manager->sockets[index].buffer_end = 0;
     return &manager->sockets[index];
 }
 

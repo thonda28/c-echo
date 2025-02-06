@@ -17,6 +17,8 @@ typedef struct
     SocketType type;
     int socket_fd;
     char buffer[BUFFER_SIZE]; // TODO: Use dynamic memory allocation for the buffer
+    size_t buffer_start;
+    size_t buffer_end;
 } SocketData;
 
 typedef struct

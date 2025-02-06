@@ -571,11 +571,18 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     // Check if the client socket is ready to read
     if (event.events & EPOLLIN)
     {
+        // Check if there is space in the buffer
+        size_t available_size = BUFFER_SIZE - client_socket_data->buffer_end;
+        if (available_size == 0)
+        {
+            return 1;
+        }
+
         ssize_t received_bytes;
-        if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer, BUFFER_SIZE - 1, 0)) > 0)
+        if ((received_bytes = recv(client_socket_data->socket_fd, client_socket_data->buffer + client_socket_data->buffer_end, available_size, 0)) > 0)
         {
             printf("received_bytes: %ld (fd: %d)\n", received_bytes, client_socket_data->socket_fd);
-            client_socket_data->buffer[received_bytes] = '\0'; // Null-terminate the string
+            client_socket_data->buffer_end += received_bytes;
         }
         else if (received_bytes == 0)
         {
@@ -596,12 +603,23 @@ int handle_client(SocketData *client_socket_data, struct epoll_event event)
     // Check if the client socket is ready to write
     if (event.events & EPOLLOUT)
     {
+        // Check if there is pending data to send
+        size_t pending_size = client_socket_data->buffer_end - client_socket_data->buffer_start;
+        if (pending_size == 0)
+        {
+            return 1;
+        }
+
         ssize_t sent_bytes;
         // Set MSG_NOSIGNAL to prevent the server from crashing when the client disconnects
-        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer, strlen(client_socket_data->buffer), MSG_NOSIGNAL)) >= 0)
+        if ((sent_bytes = send(client_socket_data->socket_fd, client_socket_data->buffer + client_socket_data->buffer_start, pending_size, MSG_NOSIGNAL)) >= 0)
         {
-            memmove(client_socket_data->buffer, client_socket_data->buffer + sent_bytes, strlen(client_socket_data->buffer) - sent_bytes);
-            client_socket_data->buffer[strlen(client_socket_data->buffer) - sent_bytes] = '\0';
+            client_socket_data->buffer_start += sent_bytes;
+            if (client_socket_data->buffer_start == client_socket_data->buffer_end)
+            {
+                client_socket_data->buffer_start = 0;
+                client_socket_data->buffer_end = 0;
+            }
         }
         else
         {
